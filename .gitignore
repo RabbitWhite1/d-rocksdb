@@ -1,0 +1,7 @@
+build
+.vscode
+__pycache__
+/ycsb_expr/logs
+/ycsb_expr/perf
+/ycsb_expr/workload
+/ycsb_expr/rocksdb_properties

@@ -1,0 +1,799 @@
+make all --print-data-base --no-builtin-variables --no-builtin-rules --question
+# GNU Make 4.2.1
+# Built for x86_64-pc-linux-gnu
+# Copyright (C) 1988-2016 Free Software Foundation, Inc.
+# License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+# This is free software: you are free to change and redistribute it.
+# There is NO WARRANTY, to the extent permitted by law.
+ 
+
+# Make data base, printed on Wed Mar  9 02:05:46 2022
+
+# Variables
+
+# 'override' directive
+GNUMAKEFLAGS := 
+# automatic
+<D = $(patsubst %/,%,$(dir $<))
+# automatic
+?F = $(notdir $?)
+# environment
+PAPERSIZE = letter
+# environment
+DESKTOP_SESSION = ubuntu
+# makefile (from 'Makefile', line 13)
+EXTRA_CXXFLAGS = -I/home/hank/.local/include/rocksdb
+# default
+.SHELLFLAGS := -c
+# environment
+XDG_SESSION_CLASS = user
+# environment
+XDG_SESSION_TYPE = x11
+# environment
+VSCODE_LOG_NATIVE = false
+# automatic
+?D = $(patsubst %/,%,$(dir $?))
+# makefile (from 'Makefile', line 24)
+CPPFLAGS = -DNDEBUG
+# automatic
+@D = $(patsubst %/,%,$(dir $@))
+# environment
+XAUTHORITY = /run/user/1000/gdm/Xauthority
+# environment
+GDMSESSION = ubuntu
+# environment
+XMODIFIERS = @im=fcitx
+# makefile
+CURDIR := /home/hank/dpm/YCSB-cpp
+# makefile
+SHELL = /bin/sh
+# environment
+VTE_VERSION = 6003
+# environment
+VSCODE_NLS_CONFIG = {"locale":"zh-cn","availableLanguages":{},"_languagePackSupport":true}
+# environment
+JOURNAL_STREAM = 8:60675
+# environment
+XDG_CONFIG_DIRS = /etc/xdg/xdg-ubuntu:/etc/xdg
+# environment
+MAVEN_HOME = /opt/maven-3.6.3
+# makefile (from 'core/measurements.d', line 1)
+MAKEFILE_LIST :=  Makefile rocksdb/rocksdb_db.d core/basic_db.d core/db_factory.d core/ycsbc.d core/acknowledged_counter_generator.d core/core_workload.d core/measurements.d
+# environment
+JAVA_HOME = /opt/jdk1.8.0_291
+# automatic
+@F = $(notdir $@)
+# environment
+IM_CONFIG_PHASE = 1
+# environment
+QT_IM_MODULE = fcitx
+# environment
+USERNAME = hank
+# makefile (from 'Makefile', line 34)
+SOURCES = $(wildcard rocksdb/*.cc) $(wildcard core/*.cc)
+ 
+# makefile (from 'Makefile', line 32)
+CXXFLAGS = -O2 -std=c++17 -Wall -pthread $(EXTRA_CXXFLAGS) -I./
+# environment
+MAKELEVEL := 0
+# environment
+MANDATORY_PATH = /usr/share/gconf/ubuntu.mandatory.path
+# environment
+XDG_DATA_DIRS = /usr/share/ubuntu:/usr/local/share/:/usr/share/:/var/lib/snapd/desktop
+# environment
+DBUS_SESSION_BUS_ADDRESS = unix:path=/run/user/1000/bus
+# environment
+VSCODE_VERBOSE_LOGGING = true
+# environment
+DISPLAY = :0
+# environment
+_ = /usr/bin/code
+# environment
+MANAGERPID = 1430
+# environment
+CLUTTER_IM_MODULE = fcitx
+# environment
+LESSOPEN = | /usr/bin/lesspipe %s
+# environment
+LC_NAME = en_US.UTF-8
+# makefile (from 'Makefile', line 12)
+ 
+DEBUG_BUILD = 0
+# environment
+VSCODE_CWD = /home/hank/dpm
+# environment
+JNI_HOME = /opt/jdk1.8.0_291/include
+# default
+MAKE_HOST := x86_64-pc-linux-gnu
+# environment
+NO_PROXY = localhost,127.0.0.0/8,::1
+# environment
+GPG_AGENT_INFO = /run/user/1000/gnupg/S.gpg-agent:0:1
+# environment
+SESSION_MANAGER = local/ubuntu:@/tmp/.ICE-unix/1703,unix/ubuntu:/tmp/.ICE-unix/1703
+ 
+# environment
+XDG_RUNTIME_DIR = /run/user/1000
+# environment
+LIBRARY_PATH = /home/hank/.local/lib:
+# environment
+CONDA_PREFIX = /opt/anaconda3
+# environment
+XDG_MENU_PREFIX = gnome-
+# environment
+VSCODE_LOG_STACK = false
+# environment
+all_proxy = socks://127.0.0.1:7890/
+# environment
+INVOCATION_ID = 15d819d9938443e7adeabf317857f0f7
+ 
+# makefile (from 'Makefile', line 33)
+LDFLAGS = -lrocksdb $(EXTRA_LDFLAGS) -lpthread
+# default
+.FEATURES := target-specific order-only second-expansion else-if shortest-stem undefine oneshell archives jobserver output-sync check-symlink load
+# environment
+LS_COLORS = rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:
+# environment
+XDG_SESSION_DESKTOP = ubuntu
+# environment
+SSH_AUTH_SOCK = /run/user/1000/keyring/ssh
+# environment
+CPLUS_INCLUDE_PATH = /home/hank/.local/include:
+# automatic
+%F = $(notdir $%)
+# environment
+HTTPS_PROXY = https://127.0.0.1:7890
+ 
+# environment
+CONDA_EXE = /opt/anaconda3/bin/conda
+# environment
+no_proxy = localhost,127.0.0.0/8,::1
+# environment
+GTK_IM_MODULE = fcitx
+# environment
+VSCODE_PIPE_LOGGING = true
+# makefile (from 'Makefile', line 16)
+BIND_ROCKSDB = 1
+# environment
+PWD = /home/hank/dpm/YCSB-cpp
+# default
+.LOADED := 
+# environment
+ANT_HOME = /opt/ant-1.9.16
+# environment
+SSH_AGENT_PID = 1660
+# environment
+ 
+ORIGINAL_XDG_CURRENT_DESKTOP = ubuntu:GNOME
+# environment
+HADOOP_HOME = /opt/hadoop-3.2.2
+# makefile (from 'Makefile', line 14)
+EXTRA_LDFLAGS = -L/home/hank/.local/lib -lsnappy -lz -llz4 -lbz2 -lzstd -ldl
+# environment
+GTK_MODULES = gail:atk-bridge
+# environment
+VSCODE_AMD_ENTRYPOINT = vs/workbench/api/node/extensionHostProcess
+# environment
+HOME = /home/hank
+# environment
+LD_LIBRARY_PATH = /home/hank/.local/lib:
+# environment
+LESSCLOSE = /usr/bin/lesspipe %s %s
+ 
+# environment
+VSCODE_CLI = 1
+# environment
+VSCODE_CODE_CACHE_PATH = /home/hank/.config/Code/CachedData/b5205cc8eb4fbaa726835538cd82372cc0222d43
+# environment
+LOGNAME = hank
+# environment
+APPLICATION_INSIGHTS_NO_DIAGNOSTIC_CHANNEL = 1
+# environment
+CONDA_PROMPT_MODIFIER = (base) 
+# automatic
++F = $(notdir $+)
+# environment
+ELECTRON_NO_ATTACH_CONSOLE = 1
+# environment
+VSCODE_HANDLES_UNCAUGHT_ERRORS = true
+ 
+# environment
+GNOME_DESKTOP_SESSION_ID = this-is-deprecated
+# automatic
+^D = $(patsubst %/,%,$(dir $^))
+# environment
+LC_TIME = en_US.UTF-8
+# environment
+CONDA_DEFAULT_ENV = base
+# environment
+COLORTERM = truecolor
+# default
+MAKE = $(MAKE_COMMAND)
+# default
+MAKECMDGOALS := all
+# environment
+ 
+PATH = /opt/webdriver:/home/hank/openjdk8/scripts:/home/hank/restler/restler-fuzzer/restler_bin/restler/:/opt/mysql-5.7.26/bin:/opt/ant-1.9.16/bin:/opt/gradle-4.10.2/bin:/opt/gradle-7.1.1/bin:/opt/hadoop-3.2.2/sbin:/opt/hadoop-3.2.2/bin:/opt/neo4j-community-4.2.6/bin:/opt/jdk1.8.0_291/bin:/opt/maven-3.6.3/bin:/opt/anaconda3/bin:/opt/anaconda3/condabin:/home/hank/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/home/hank/.dotnet/tools
+# environment
+SHLVL = 1
+# environment
+MYSQL_HOME = /opt/mysql-5.7.26
+# environment
+GNOME_SHELL_SESSION_MODE = ubuntu
+# environment
+VSCODE_IPC_HOOK_EXTHOST = /run/user/1000/vscode-ipc-d3225ded-5773-4048-8f6b-3a290eea18f4.sock
+# makefile (from 'Makefile', line 37)
+EXEC = ycsb
+# default
+MAKE_VERSION := 4.2.1
+ 
+# environment
+USER = hank
+# environment
+LC_MONETARY = en_US.UTF-8
+# makefile
+.DEFAULT_GOAL := all
+# environment
+XDG_CURRENT_DESKTOP = Unity
+# environment
+HADOOP_MAPRED_HOME = /opt/hadoop-3.2.2
+# environment
+JAVACC_HOME = /opt/javacc/target
+# automatic
+%D = $(patsubst %/,%,$(dir $%))
+# environment
+LC_TELEPHONE = en_US.UTF-8
+ 
+# environment
+CONDA_SHLVL = 1
+# default
+MAKE_COMMAND := make
+# environment
+OLDPWD = /home/hank
+# default
+.VARIABLES := 
+# automatic
+*F = $(notdir $*)
+# environment
+LANGUAGE = zh_CN:en_US:en
+# environment
+VSCODE_IPC_HOOK = /run/user/1000/vscode-c4e9d63e-1.65.0-main.sock
+# makefile
+ 
+MAKEFLAGS = pqrR
+# environment
+MFLAGS = -pqrR
+# automatic
+*D = $(patsubst %/,%,$(dir $*))
+# automatic
++D = $(patsubst %/,%,$(dir $+))
+# environment
+GDK_BACKEND = x11
+# environment
+LC_PAPER = en_US.UTF-8
+# environment
+NO_AT_BRIDGE = 1
+# environment
+ 
+HTTP_PROXY = http://127.0.0.1:7890
+# environment
+QT_ACCESSIBILITY = 1
+# environment
+DEFAULTS_PATH = /usr/share/gconf/ubuntu.default.path
+# default
+MAKEFILES := 
+# environment
+LC_NUMERIC = en_US.UTF-8
+# automatic
+<F = $(notdir $<)
+# environment
+https_proxy = http://127.0.0.1:7890/
+# environment
+ELECTRON_RUN_AS_NODE = 1
+# environment
+LC_MEASUREMENT = en_US.UTF-8
+# environment
+LC_ALL = C
+# environment
+CONDA_PYTHON_EXE = /opt/anaconda3/bin/python
+# environment
+QT4_IM_MODULE = fcitx
+# environment
+GNOME_TERMINAL_SCREEN = /org/gnome/Terminal/screen/8a2511d8_d0c8_4789_9f56_14dd0aee522e
+# automatic
+ 
+^F = $(notdir $^)
+# environment
+NEO4J_HOME = /opt/neo4j-community-4.2.6
+# makefile (from 'Makefile', line 36)
+DEPS = $(SOURCES:.cc=.d)
+# environment
+GNOME_TERMINAL_SERVICE = :1.104
+# default
+SUFFIXES := 
+# environment
+_CE_M = 
+# environment
+CHROME_DESKTOP = code-url-handler.desktop
+# environment
+WINDOWPATH = 2
+ 
+# default
+.INCLUDE_DIRS = /usr/include /usr/local/include /usr/include
+# environment
+LC_IDENTIFICATION = en_US.UTF-8
+# environment
+ALL_PROXY = socks://127.0.0.1:7890/
+# default
+.RECIPEPREFIX := 
+# makefile (from 'Makefile', line 35)
+OBJECTS = $(SOURCES:.cc=.o)
+# environment
+http_proxy = http://127.0.0.1:7890/
+# environment
+LC_ADDRESS = en_US.UTF-8
+# environment
+LANG = C
+ 
+# environment
+TERM = xterm-256color
+# environment
+VSCODE_PID = 3650
+# environment
+_CE_CONDA = 
+# variable set hash-table stats:
+# Load=157/1024=15%, Rehash=0, Collisions=30/229=13%
+
+# Pattern-specific Variable Values
+
+# No pattern-specific variable values.
+
+# Directories
+
+# . (device 2053, inode 6725687): 13 files, no impossibilities.
+ 
+# core (device 2053, inode 6725706): 36 files, no impossibilities.
+# rocksdb (device 2053, inode 6725709): 7 files, no impossibilities.
+
+# 56 files, no impossibilities in 3 directories.
+
+# Implicit Rules
+
+%.d: %.cc
+#  recipe to execute (from 'Makefile', line 50):
+	@$(CXX) $(CXXFLAGS) $(CPPFLAGS) -MM -MT '$(<:.cc=.o)' -o $@ $<
+
+# 1 implicit rules, 0 (0.0%) terminal.
+
+# Files
+
+# Not a target:
+core/core_workload.h:
+#  Implicit rule search has been done.
+ 
+#  Last modified 2022-03-09 01:00:19.704202259
+#  File has been updated.
+#  Successfully updated.
+
+# Not a target:
+core/zipfian_generator.h:
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.704202259
+#  File has been updated.
+#  Successfully updated.
+
+# Not a target:
+rocksdb/rocksdb_db.cc:
+ 
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.70822781
+#  File has been updated.
+#  Successfully updated.
+
+core/db_factory.o: core/db_factory.cc core/db_factory.h core/db.h core/properties.h core/utils.h core/measurements.h core/core_workload.h core/generator.h core/discrete_generator.h core/counter_generator.h core/acknowledged_counter_generator.h core/basic_db.h core/db_wrapper.h core/timer.h
+#  Implicit rule search has been done.
+#  File does not exist.
+#  File has been updated.
+#  Successfully updated.
+
+all: ycsb
+#  Command line target.
+#  Implicit rule search has been done.
+ 
+#  File does not exist.
+#  File has been updated.
+#  Needs to be updated (-q is set).
+# variable set hash-table stats:
+# Load=0/32=0%, Rehash=0, Collisions=0/8=0%
+
+core/measurements.o: core/measurements.cc core/measurements.h core/core_workload.h core/db.h core/properties.h core/utils.h core/generator.h core/discrete_generator.h core/counter_generator.h core/acknowledged_counter_generator.h
+#  Implicit rule search has been done.
+#  File does not exist.
+#  File has been updated.
+#  Successfully updated.
+
+core/acknowledged_counter_generator.o: core/acknowledged_counter_generator.cc core/acknowledged_counter_generator.h core/counter_generator.h core/generator.h core/utils.h
+#  Implicit rule search has been done.
+ 
+#  File does not exist.
+#  File has been updated.
+#  Successfully updated.
+
+.PHONY: clean
+#  Implicit rule search has not been done.
+#  Modification time never checked.
+#  File has not been updated.
+
+# Not a target:
+core/timer.h:
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.704202259
+ 
+#  File has been updated.
+#  Successfully updated.
+
+core/basic_db.d: core/basic_db.cc
+#  Implicit rule search has been done.
+#  Implicit/static pattern stem: 'core/basic_db'
+#  Last modified 2022-03-09 02:05:46.045310921
+#  File has been updated.
+#  Successfully updated.
+#  recipe to execute (from 'Makefile', line 50):
+	@$(CXX) $(CXXFLAGS) $(CPPFLAGS) -MM -MT '$(<:.cc=.o)' -o $@ $<
+
+# Not a target:
+core/uniform_generator.h:
+#  Implicit rule search has been done.
+ 
+#  Last modified 2022-03-09 01:00:19.704202259
+#  File has been updated.
+#  Successfully updated.
+
+core/core_workload.d: core/core_workload.cc
+#  Implicit rule search has been done.
+#  Implicit/static pattern stem: 'core/core_workload'
+#  Last modified 2022-03-09 02:05:45.496722545
+#  File has been updated.
+#  Successfully updated.
+#  recipe to execute (from 'Makefile', line 50):
+ 
+	@$(CXX) $(CXXFLAGS) $(CPPFLAGS) -MM -MT '$(<:.cc=.o)' -o $@ $<
+
+# Not a target:
+core/countdown_latch.h:
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.704202259
+#  File has been updated.
+#  Successfully updated.
+
+# Not a target:
+core/db_factory.cc:
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.704202259
+#  File has been updated.
+ 
+#  Successfully updated.
+
+# Not a target:
+core/measurements.cc:
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.704202259
+#  File has been updated.
+#  Successfully updated.
+
+.cc.o:
+#  Implicit rule search has not been done.
+#  Modification time never checked.
+#  File has not been updated.
+#  recipe to execute (from 'Makefile', line 46):
+ 
+	@$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c -o $@ $<
+	@echo "  CC      " $@
+
+core/ycsbc.d: core/ycsbc.cc
+#  Implicit rule search has been done.
+#  Implicit/static pattern stem: 'core/ycsbc'
+#  Last modified 2022-03-09 02:05:45.763068922
+#  File has been updated.
+#  Successfully updated.
+#  recipe to execute (from 'Makefile', line 50):
+	@$(CXX) $(CXXFLAGS) $(CPPFLAGS) -MM -MT '$(<:.cc=.o)' -o $@ $<
+
+# Not a target:
+core/acknowledged_counter_generator.cc:
+#  Implicit rule search has been done.
+ 
+#  Last modified 2022-03-09 01:00:19.700176709
+#  File has been updated.
+#  Successfully updated.
+
+# Not a target:
+core/scrambled_zipfian_generator.h:
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.704202259
+#  File has been updated.
+#  Successfully updated.
+
+# Not a target:
+.SUFFIXES:
+#  Implicit rule search has not been done.
+#  Modification time never checked.
+#  File has not been updated.
+
+ycsb: rocksdb/rocksdb_db.o core/basic_db.o core/db_factory.o core/ycsbc.o core/acknowledged_counter_generator.o core/core_workload.o core/measurements.o
+#  Implicit rule search has not been done.
+#  Implicit/static pattern stem: ''
+#  File does not exist.
+#  File has been updated.
+#  Needs to be updated (-q is set).
+# automatic
+# @ := ycsb
+ 
+# automatic
+# % := 
+# automatic
+# * := 
+# automatic
+# + := rocksdb/rocksdb_db.o core/basic_db.o core/db_factory.o core/ycsbc.o core/acknowledged_counter_generator.o core/core_workload.o core/measurements.o
+# automatic
+# | := 
+# automatic
+# < := rocksdb/rocksdb_db.o
+# automatic
+# ^ := rocksdb/rocksdb_db.o core/basic_db.o core/db_factory.o core/ycsbc.o core/acknowledged_counter_generator.o core/core_workload.o core/measurements.o
+# automatic
+# ? := rocksdb/rocksdb_db.o core/basic_db.o core/db_factory.o core/ycsbc.o core/acknowledged_counter_generator.o core/core_workload.o core/measurements.o
+# variable set hash-table stats:
+ 
+# Load=8/32=25%, Rehash=0, Collisions=1/19=5%
+#  recipe to execute (from 'Makefile', line 42):
+	@$(CXX) $(CXXFLAGS) $^ $(LDFLAGS) -o $@
+	@echo "  LD      " $@
+
+# Not a target:
+core/skewed_latest_generator.h:
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.704202259
+#  File has been updated.
+#  Successfully updated.
+ 
+
+# Not a target:
+core/counter_generator.h:
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.704202259
+#  File has been updated.
+#  Successfully updated.
+
+# Not a target:
+Makefile:
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:32:13.989908561
+#  File has been updated.
+#  Successfully updated.
+
+# Not a target:
+ 
+core/discrete_generator.h:
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.704202259
+#  File has been updated.
+#  Successfully updated.
+
+# Not a target:
+core/db_wrapper.h:
+#  Implicit rule search has been done.
+ 
+#  Last modified 2022-03-09 01:00:19.704202259
+#  File has been updated.
+#  Successfully updated.
+
+core/basic_db.o: core/basic_db.cc core/basic_db.h core/db.h core/properties.h core/utils.h
+#  Implicit rule search has been done.
+#  File does not exist.
+#  File has been updated.
+#  Successfully updated.
+
+# Not a target:
+rocksdb/rocksdb_db.h:
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.70822781
+ 
+#  File has been updated.
+#  Successfully updated.
+
+core/core_workload.o: core/core_workload.cc core/utils.h core/uniform_generator.h core/generator.h core/zipfian_generator.h core/scrambled_zipfian_generator.h core/skewed_latest_generator.h core/counter_generator.h core/const_generator.h core/core_workload.h core/db.h core/properties.h core/discrete_generator.h core/acknowledged_counter_generator.h core/random_byte_generator.h
+#  Implicit rule search has been done.
+#  File does not exist.
+#  File has been updated.
+#  Successfully updated.
+
+core/ycsbc.o: core/ycsbc.cc core/utils.h core/timer.h core/client.h core/db.h core/properties.h core/core_workload.h core/generator.h core/discrete_generator.h core/counter_generator.h core/acknowledged_counter_generator.h core/countdown_latch.h core/measurements.h core/db_factory.h
+#  Implicit rule search has been done.
+#  File does not exist.
+#  File has been updated.
+#  Successfully updated.
+
+# Not a target:
+ 
+core/basic_db.cc:
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.700176709
+#  File has been updated.
+#  Successfully updated.
+
+# Not a target:
+.DEFAULT:
+#  Implicit rule search has not been done.
+#  Modification time never checked.
+#  File has not been updated.
+
+# Not a target:
+core/db_factory.h:
+#  Implicit rule search has been done.
+ 
+#  Last modified 2022-03-09 01:00:19.704202259
+#  File has been updated.
+#  Successfully updated.
+
+# Not a target:
+core/measurements.h:
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.704202259
+#  File has been updated.
+#  Successfully updated.
+
+# Not a target:
+core/acknowledged_counter_generator.h:
+ 
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.700176709
+#  File has been updated.
+#  Successfully updated.
+
+# Not a target:
+core/core_workload.cc:
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.704202259
+#  File has been updated.
+#  Successfully updated.
+
+rocksdb/rocksdb_db.d: rocksdb/rocksdb_db.cc
+#  Implicit rule search has been done.
+#  Implicit/static pattern stem: 'rocksdb/rocksdb_db'
+ 
+#  Last modified 2022-03-09 02:05:46.192378676
+#  File has been updated.
+#  Successfully updated.
+#  recipe to execute (from 'Makefile', line 50):
+	@$(CXX) $(CXXFLAGS) $(CPPFLAGS) -MM -MT '$(<:.cc=.o)' -o $@ $<
+
+# Not a target:
+core/ycsbc.cc:
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.704202259
+#  File has been updated.
+#  Successfully updated.
+
+clean:
+ 
+#  Phony target (prerequisite of .PHONY).
+#  Implicit rule search has not been done.
+#  File does not exist.
+#  File has not been updated.
+#  recipe to execute (from 'Makefile', line 57):
+	find . -name "*.[od]" -delete
+	$(RM) $(EXEC)
+
+# Not a target:
+core/generator.h:
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.704202259
+#  File has been updated.
+#  Successfully updated.
+ 
+
+# Not a target:
+core/random_byte_generator.h:
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.704202259
+#  File has been updated.
+#  Successfully updated.
+
+# Not a target:
+core/const_generator.h:
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.704202259
+#  File has been updated.
+#  Successfully updated.
+
+# Not a target:
+core/db.h:
+ 
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.704202259
+#  File has been updated.
+#  Successfully updated.
+
+# Not a target:
+core/utils.h:
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.704202259
+#  File has been updated.
+#  Successfully updated.
+
+core/db_factory.d: core/db_factory.cc
+#  Implicit rule search has been done.
+#  Implicit/static pattern stem: 'core/db_factory'
+ 
+#  Last modified 2022-03-09 02:05:45.922081684
+#  File has been updated.
+#  Successfully updated.
+#  recipe to execute (from 'Makefile', line 50):
+	@$(CXX) $(CXXFLAGS) $(CPPFLAGS) -MM -MT '$(<:.cc=.o)' -o $@ $<
+
+core/measurements.d: core/measurements.cc
+#  Implicit rule search has been done.
+#  Implicit/static pattern stem: 'core/measurements'
+#  Last modified 2022-03-09 02:05:45.333734465
+#  File has been updated.
+#  Successfully updated.
+#  recipe to execute (from 'Makefile', line 50):
+	@$(CXX) $(CXXFLAGS) $(CPPFLAGS) -MM -MT '$(<:.cc=.o)' -o $@ $<
+
+core/acknowledged_counter_generator.d: core/acknowledged_counter_generator.cc
+#  Implicit rule search has been done.
+#  Implicit/static pattern stem: 'core/acknowledged_counter_generator'
+#  Last modified 2022-03-09 02:05:45.608031479
+ 
+#  File has been updated.
+#  Successfully updated.
+#  recipe to execute (from 'Makefile', line 50):
+	@$(CXX) $(CXXFLAGS) $(CPPFLAGS) -MM -MT '$(<:.cc=.o)' -o $@ $<
+
+# Not a target:
+core/basic_db.h:
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.704202259
+#  File has been updated.
+#  Successfully updated.
+
+# Not a target:
+core/properties.h:
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.704202259
+#  File has been updated.
+#  Successfully updated.
+
+rocksdb/rocksdb_db.o: rocksdb/rocksdb_db.cc rocksdb/rocksdb_db.h
+#  Implicit rule search has been done.
+#  File does not exist.
+ 
+#  File has been updated.
+#  Successfully updated.
+
+# Not a target:
+core/client.h:
+#  Implicit rule search has been done.
+#  Last modified 2022-03-09 01:00:19.704202259
+#  File has been updated.
+#  Successfully updated.
+
+# files hash-table stats:
+# Load=51/1024=5%, Rehash=0, Collisions=0/173=0%
+# VPATH Search Paths
+
+# No 'vpath' search paths.
+
+# No general ('VPATH' variable) search path.
+
+ 
+# strcache buffers: 1 (0) / strings = 112 / storage = 1870 B / avg = 16 B
+# current buf: size = 8162 B / used = 1870 B / count = 112 / avg = 16 B
+
+# strcache performance: lookups = 203 / hit rate = 44%
+# hash-table stats:
+# Load=112/8192=1%, Rehash=0, Collisions=11/203=5%
+# Finished Make data base on Wed Mar  9 02:05:46 2022
+
+ 

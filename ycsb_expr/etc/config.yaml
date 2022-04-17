@@ -1,0 +1,16 @@
+"paths":
+  "local":
+    "working_dirname": "/home/wzh/ycsb_expr"
+  "remote":
+    "working_dirname": "/home/wzh/ycsb_expr"
+    "log_dirname": "/home/wzh/ycsb_expr/logs/"
+"server_names":
+  - "h3"
+"master_addr": "10.0.0.1"
+
+"rsync_install_dirname": 'F:\\App\\cwrsync_6.2.3_x64_free'
+
+"col_cmd_name_mapper":
+  "num_process": "NUM_PROCESS"
+  "num_nodes": "NNODES"
+  "id": "conf_id"

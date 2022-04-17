@@ -1,0 +1,34 @@
+columns:
+  - name: cache_size
+    type: int
+  - name: operationcount
+    type: int
+  - name: recordcount
+    type: int
+  - name: threads
+    type: int
+  - name: workload
+    type: text
+  - name: write_buffer_size
+    type: int
+  - name: version
+    type: text
+    default: v0
+  - name: zipfian_alpha
+    type: float
+    default: 0.99
+  - name: requestdistribution
+    type: text
+    default: zipfian
+  - name: max_write_buffer_number
+    type: int
+    default: 2
+  - name: max_background_jobs
+    type: int
+    default: 2
+  - name: table_cache_numshardbits
+    type: int
+    default: 6
+  - name: min_write_buffer_number_to_merge
+    type: int
+    default: 2

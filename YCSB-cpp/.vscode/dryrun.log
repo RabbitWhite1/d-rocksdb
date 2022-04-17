@@ -1,0 +1,21 @@
+make --dry-run --keep-going --print-directory
+make: Entering directory '/home/hank/dpm/YCSB-cpp'
+ 
+g++ -O2 -std=c++17 -Wall -pthread -I/home/hank/.local/include/rocksdb -I./ -DNDEBUG -c -o rocksdb/rocksdb_db.o rocksdb/rocksdb_db.cc
+echo "  CC      " rocksdb/rocksdb_db.o
+g++ -O2 -std=c++17 -Wall -pthread -I/home/hank/.local/include/rocksdb -I./ -DNDEBUG -c -o core/basic_db.o core/basic_db.cc
+echo "  CC      " core/basic_db.o
+g++ -O2 -std=c++17 -Wall -pthread -I/home/hank/.local/include/rocksdb -I./ -DNDEBUG -c -o core/db_factory.o core/db_factory.cc
+echo "  CC      " core/db_factory.o
+g++ -O2 -std=c++17 -Wall -pthread -I/home/hank/.local/include/rocksdb -I./ -DNDEBUG -c -o core/ycsbc.o core/ycsbc.cc
+echo "  CC      " core/ycsbc.o
+g++ -O2 -std=c++17 -Wall -pthread -I/home/hank/.local/include/rocksdb -I./ -DNDEBUG -c -o core/acknowledged_counter_generator.o core/acknowledged_counter_generator.cc
+echo "  CC      " core/acknowledged_counter_generator.o
+g++ -O2 -std=c++17 -Wall -pthread -I/home/hank/.local/include/rocksdb -I./ -DNDEBUG -c -o core/core_workload.o core/core_workload.cc
+echo "  CC      " core/core_workload.o
+g++ -O2 -std=c++17 -Wall -pthread -I/home/hank/.local/include/rocksdb -I./ -DNDEBUG -c -o core/measurements.o core/measurements.cc
+echo "  CC      " core/measurements.o
+g++ -O2 -std=c++17 -Wall -pthread -I/home/hank/.local/include/rocksdb -I./ rocksdb/rocksdb_db.o core/basic_db.o core/db_factory.o core/ycsbc.o core/acknowledged_counter_generator.o core/core_workload.o core/measurements.o -lrocksdb -L/home/hank/.local/lib -lsnappy -lz -llz4 -lbz2 -lzstd -ldl -lpthread -o ycsb
+echo "  LD      " ycsb
+make: Leaving directory '/home/hank/dpm/YCSB-cpp'
+ 
