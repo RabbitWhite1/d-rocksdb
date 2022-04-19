@@ -90,16 +90,16 @@ requestdistribution_zipfian_alpha={zipfian_alpha}
 """
 
 LOAD_CMD = 'date && time ./ycsb -load -db rocksdb -threads {threads} '\
-'-P /home/wzh/ycsb_expr/workload/{conf_id} '\
-'-P /home/wzh/ycsb_expr/rocksdb_properties/{conf_id}.properties -s '\
+'-P /home/wzh/d-rocksdb/ycsb_expr/workload/{conf_id} '\
+'-P /home/wzh/d-rocksdb/ycsb_expr/rocksdb_properties/{conf_id}.properties -s '\
 '> {log_path} '
 RUN_WITH_INIT_CMD = 'date && time rm -rf /home/wzh/nvme/ycsb-rocksdb && time cp -r /home/wzh/nvme/ycsb-rocksdb.template /home/wzh/nvme/ycsb-rocksdb && time ./ycsb -run -db rocksdb -threads {threads} '\
-'-P /home/wzh/ycsb_expr/workload/{conf_id} '\
-'-P /home/wzh/ycsb_expr/rocksdb_properties/{conf_id}.properties -s '\
+'-P /home/wzh/d-rocksdb/ycsb_expr/workload/{conf_id} '\
+'-P /home/wzh/d-rocksdb/ycsb_expr/rocksdb_properties/{conf_id}.properties -s '\
 '> {log_path}'
 RUN_WITHOUT_INIT_CMD = 'date && time ./ycsb -run -db rocksdb -threads {threads} '\
-'-P /home/wzh/ycsb_expr/workload/{conf_id} '\
-'-P /home/wzh/ycsb_expr/rocksdb_properties/{conf_id}.properties -s '\
+'-P /home/wzh/d-rocksdb/ycsb_expr/workload/{conf_id} '\
+'-P /home/wzh/d-rocksdb/ycsb_expr/rocksdb_properties/{conf_id}.properties -s '\
 '|tee {log_path}'
 
 DBNAMES = {'a': '/home/spdk/nvme/wzh/ycsb-rocksdb', 'b': '/home/spdk/nvme/wzh/ycsb-rocksdb', 'c': '/home/spdk/nvme/wzh/ycsb-rocksdb.readonly'}

@@ -629,6 +629,7 @@ set(SOURCES
         cache/cache_reservation_manager.cc
         cache/clock_cache.cc
         cache/lru_cache.cc
+        cache/rm_lru_cache.cc
         cache/sharded_cache.cc
         db/arena_wrapped_db_iter.cc
         db/blob/blob_fetcher.cc

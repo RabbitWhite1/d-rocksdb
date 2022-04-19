@@ -81,6 +81,7 @@ using ROCKSDB_NAMESPACE::Iterator;
 using ROCKSDB_NAMESPACE::LiveFileMetaData;
 using ROCKSDB_NAMESPACE::Logger;
 using ROCKSDB_NAMESPACE::LRUCacheOptions;
+using ROCKSDB_NAMESPACE::RMLRUCacheOptions;
 using ROCKSDB_NAMESPACE::MemoryAllocator;
 using ROCKSDB_NAMESPACE::MemoryUtil;
 using ROCKSDB_NAMESPACE::MergeOperator;
@@ -88,6 +89,7 @@ using ROCKSDB_NAMESPACE::NewBloomFilterPolicy;
 using ROCKSDB_NAMESPACE::NewCompactOnDeletionCollectorFactory;
 using ROCKSDB_NAMESPACE::NewGenericRateLimiter;
 using ROCKSDB_NAMESPACE::NewLRUCache;
+using ROCKSDB_NAMESPACE::NewRMLRUCache;
 using ROCKSDB_NAMESPACE::NewRibbonFilterPolicy;
 using ROCKSDB_NAMESPACE::OptimisticTransactionDB;
 using ROCKSDB_NAMESPACE::OptimisticTransactionOptions;
@@ -158,6 +160,9 @@ struct rocksdb_logger_t {
 };
 struct rocksdb_lru_cache_options_t {
   LRUCacheOptions rep;
+};
+struct rocksdb_rm_lru_cache_options_t {
+  RMLRUCacheOptions rep;
 };
 struct rocksdb_memory_allocator_t {
   std::shared_ptr<MemoryAllocator> rep;
@@ -4178,7 +4183,15 @@ rocksdb_lru_cache_options_t* rocksdb_lru_cache_options_create() {
   return new rocksdb_lru_cache_options_t;
 }
 
+rocksdb_rm_lru_cache_options_t* rocksdb_rm_lru_cache_options_create() {
+  return new rocksdb_rm_lru_cache_options_t;
+}
+
 void rocksdb_lru_cache_options_destroy(rocksdb_lru_cache_options_t* opt) {
+  delete opt;
+}
+
+void rocksdb_rm_lru_cache_options_destroy(rocksdb_rm_lru_cache_options_t* opt) {
   delete opt;
 }
 
@@ -4187,8 +4200,18 @@ void rocksdb_lru_cache_options_set_capacity(rocksdb_lru_cache_options_t* opt,
   opt->rep.capacity = capacity;
 }
 
+void rocksdb_rm_lru_cache_options_set_capacity(rocksdb_rm_lru_cache_options_t* opt,
+                                            size_t capacity) {
+  opt->rep.capacity = capacity;
+}
+
 void rocksdb_lru_cache_options_set_memory_allocator(
     rocksdb_lru_cache_options_t* opt, rocksdb_memory_allocator_t* allocator) {
+  opt->rep.memory_allocator = allocator->rep;
+}
+
+void rocksdb_rm_lru_cache_options_set_memory_allocator(
+    rocksdb_rm_lru_cache_options_t* opt, rocksdb_memory_allocator_t* allocator) {
   opt->rep.memory_allocator = allocator->rep;
 }
 
@@ -4202,6 +4225,13 @@ rocksdb_cache_t* rocksdb_cache_create_lru_opts(
     rocksdb_lru_cache_options_t* opt) {
   rocksdb_cache_t* c = new rocksdb_cache_t;
   c->rep = NewLRUCache(opt->rep);
+  return c;
+}
+
+rocksdb_cache_t* rocksdb_cache_create_rm_lru_opts(
+    rocksdb_rm_lru_cache_options_t* opt) {
+  rocksdb_cache_t* c = new rocksdb_cache_t;
+  c->rep = NewRMLRUCache(opt->rep);
   return c;
 }
 

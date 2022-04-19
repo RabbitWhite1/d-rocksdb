@@ -394,6 +394,24 @@ Status BlockBasedTable::InsertEntryToCache(
   return s;
 }
 
+template <>
+Status BlockBasedTable::InsertEntryToCache(
+    const CacheTier& cache_tier, Cache* block_cache, const Slice& key,
+    const Cache::CacheItemHelper* cache_helper,
+    std::unique_ptr<Block>& block_holder, size_t charge,
+    Cache::Handle** cache_handle, Cache::Priority priority) const {
+  Status s = Status::OK();
+  if (cache_tier == CacheTier::kNonVolatileBlockTier) {
+    printf("Block: the size is: %lu\n", block_holder->size());
+    s = block_cache->Insert(key, block_holder.get(), cache_helper, charge,
+                            cache_handle, priority);
+  } else {
+    s = block_cache->Insert(key, block_holder.get(), charge,
+                            cache_helper->del_cb, cache_handle, priority);
+  }
+  return s;
+}
+
 namespace {
 // Return True if table_properties has `user_prop_name` has a `true` value
 // or it doesn't contain this property (for backward compatible).
