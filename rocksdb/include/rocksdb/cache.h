@@ -166,6 +166,9 @@ struct RMLRUCacheOptions {
   // BlockBasedTableOptions::cache_index_and_filter_blocks_with_high_priority.
   double high_pri_pool_ratio = 0.5;
 
+  // Remote memory ratio
+  double rm_ratio = 0.0;
+
   // If non-nullptr will use this allocator instead of system allocator when
   // allocating memory for cache blocks. Call this method before you start using
   // the cache!
@@ -213,7 +216,7 @@ struct RMLRUCacheOptions {
 // will be at least 512KB and number of shard bits will not exceed 6.
 extern std::shared_ptr<Cache> NewRMLRUCache(
     size_t capacity, int num_shard_bits = -1,
-    bool strict_capacity_limit = false, double high_pri_pool_ratio = 0.5,
+    bool strict_capacity_limit = false, double high_pri_pool_ratio = 0.5, double rm_ratio = 0.0,
     std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
     bool use_adaptive_mutex = kDefaultToAdaptiveMutex,
     CacheMetadataChargePolicy metadata_charge_policy =

@@ -110,20 +110,21 @@ void RMLRUHandleTable::Resize() {
 }
 
 RMLRUCacheShard::RMLRUCacheShard(
-    size_t capacity, bool strict_capacity_limit, double high_pri_pool_ratio,
+    size_t capacity, bool strict_capacity_limit, double high_pri_pool_ratio, double rm_ratio,
     bool use_adaptive_mutex, CacheMetadataChargePolicy metadata_charge_policy,
     int max_upper_hash_bits,
-    const std::shared_ptr<SecondaryCache>& secondary_cache)
+    const std::shared_ptr<RemoteMemory>& remote_memory)
     : capacity_(0),
       high_pri_pool_usage_(0),
       strict_capacity_limit_(strict_capacity_limit),
       high_pri_pool_ratio_(high_pri_pool_ratio),
       high_pri_pool_capacity_(0),
+      rm_ratio_(rm_ratio),
       table_(max_upper_hash_bits),
       usage_(0),
       rm_lru_usage_(0),
       mutex_(use_adaptive_mutex),
-      secondary_cache_(secondary_cache) {
+      remote_memory_(remote_memory) {
   set_metadata_charge_policy(metadata_charge_policy);
   // Make empty circular linked list
   rm_lru_.next = &rm_lru_;
@@ -292,17 +293,15 @@ void RMLRUCacheShard::SetCapacity(size_t capacity) {
     MutexLock l(&mutex_);
     capacity_ = capacity;
     high_pri_pool_capacity_ = capacity_ * high_pri_pool_ratio_;
+    lm_capacity_ = capacity * (1-rm_ratio_);
+    rm_capacity_ = capacity_ * rm_ratio_;
     EvictFromRMLRU(0, &last_reference_list);
   }
 
   // Try to insert the evicted entries into tiered cache
   // Free the entries outside of mutex for performance reasons
   for (auto entry : last_reference_list) {
-    if (secondary_cache_ && entry->IsSecondaryCacheCompatible() &&
-        !entry->IsPromoted()) {
-      secondary_cache_->Insert(entry->key(), entry->value, entry->info_.helper)
-          .PermitUncheckedError();
-    }
+    // TODO: maybe evict to remote memory
     entry->Free();
   }
 }
@@ -373,11 +372,7 @@ Status RMLRUCacheShard::InsertItem(RMLRUHandle* e, Cache::Handle** handle,
   // Try to insert the evicted entries into the secondary cache
   // Free the entries here outside of mutex for performance reasons
   for (auto entry : last_reference_list) {
-    if (secondary_cache_ && entry->IsSecondaryCacheCompatible() &&
-        !entry->IsPromoted()) {
-      secondary_cache_->Insert(entry->key(), entry->value, entry->info_.helper)
-          .PermitUncheckedError();
-    }
+    // TODO: maybe evict to remote memory
     entry->Free();
   }
 
@@ -385,35 +380,8 @@ Status RMLRUCacheShard::InsertItem(RMLRUHandle* e, Cache::Handle** handle,
 }
 
 void RMLRUCacheShard::Promote(RMLRUHandle* e) {
-  SecondaryCacheResultHandle* secondary_handle = e->sec_handle;
-
-  assert(secondary_handle->IsReady());
-  e->SetIncomplete(false);
-  e->SetInCache(true);
-  e->SetPromoted(true);
-  e->value = secondary_handle->Value();
-  e->charge = secondary_handle->Size();
-  delete secondary_handle;
-
-  // This call could fail if the cache is over capacity and
-  // strict_capacity_limit_ is true. In such a case, we don't want
-  // InsertItem() to free the handle, since the item is already in memory
-  // and the caller will most likely just read from disk if we erase it here.
-  if (e->value) {
-    Cache::Handle* handle = reinterpret_cast<Cache::Handle*>(e);
-    Status s = InsertItem(e, &handle, /*free_handle_on_fail=*/false);
-    if (!s.ok()) {
-      // Item is in memory, but not accounted against the cache capacity.
-      // When the handle is released, the item should get deleted
-      assert(!e->InCache());
-    }
-  } else {
-    // Since the secondary cache lookup failed, mark the item as not in cache
-    // Don't charge the cache as its only metadata that'll shortly be released
-    MutexLock l(&mutex_);
-    e->charge = 0;
-    e->SetInCache(false);
-  }
+  // TODO: check whether need this
+  printf("should not call this\n");
 }
 
 Cache::Handle* RMLRUCacheShard::Lookup(
@@ -436,58 +404,6 @@ Cache::Handle* RMLRUCacheShard::Lookup(
     }
   }
 
-  // If handle table lookup failed, then allocate a handle outside the
-  // mutex if we're going to lookup in the secondary cache
-  // Only support synchronous for now
-  // TODO: Support asynchronous lookup in secondary cache
-  if (!e && secondary_cache_ && helper && helper->saveto_cb) {
-    // For objects from the secondary cache, we expect the caller to provide
-    // a way to create/delete the primary cache object. The only case where
-    // a deleter would not be required is for dummy entries inserted for
-    // accounting purposes, which we won't demote to the secondary cache
-    // anyway.
-    assert(create_cb && helper->del_cb);
-    std::unique_ptr<SecondaryCacheResultHandle> secondary_handle =
-        secondary_cache_->Lookup(key, create_cb, wait);
-    if (secondary_handle != nullptr) {
-      e = reinterpret_cast<RMLRUHandle*>(
-          new char[sizeof(RMLRUHandle) - 1 + key.size()]);
-
-      e->flags = 0;
-      e->SetSecondaryCacheCompatible(true);
-      e->info_.helper = helper;
-      e->key_length = key.size();
-      e->hash = hash;
-      e->refs = 0;
-      e->next = e->prev = nullptr;
-      e->SetPriority(priority);
-      memcpy(e->key_data, key.data(), key.size());
-      e->value = nullptr;
-      e->sec_handle = secondary_handle.release();
-      e->Ref();
-
-      if (wait) {
-        Promote(e);
-        if (!e->value) {
-          // The secondary cache returned a handle, but the lookup failed
-          e->Unref();
-          e->Free();
-          e = nullptr;
-        } else {
-          PERF_COUNTER_ADD(secondary_cache_hit_count, 1);
-          RecordTick(stats, SECONDARY_CACHE_HITS);
-        }
-      } else {
-        // If wait is false, we always return a handle and let the caller
-        // release the handle after checking for success or failure
-        e->SetIncomplete(true);
-        // This may be slightly inaccurate, if the lookup eventually fails.
-        // But the probability is very low.
-        PERF_COUNTER_ADD(secondary_cache_hit_count, 1);
-        RecordTick(stats, SECONDARY_CACHE_HITS);
-      }
-    }
-  }
   return reinterpret_cast<Cache::Handle*>(e);
 }
 
@@ -535,7 +451,9 @@ bool RMLRUCacheShard::Release(Cache::Handle* handle, bool force_erase) {
     // cache compatible and has a non-null value, then decrement the cache
     // usage. If value is null in the latter case, taht means the lookup
     // failed and we didn't charge the cache.
-    if (last_reference && (!e->IsSecondaryCacheCompatible() || e->value)) {
+    // TODO: check what to do here
+    // if (last_reference && (!e->IsSecondaryCacheCompatible() || e->value)) {
+    if (last_reference) {
       size_t total_charge = e->CalcTotalCharge(metadata_charge_policy_);
       assert(usage_ >= total_charge);
       usage_ -= total_charge;
@@ -611,15 +529,9 @@ void RMLRUCacheShard::Erase(const Slice& key, uint32_t hash) {
 }
 
 bool RMLRUCacheShard::IsReady(Cache::Handle* handle) {
-  RMLRUHandle* e = reinterpret_cast<RMLRUHandle*>(handle);
-  MutexLock l(&mutex_);
-  bool ready = true;
-  if (e->IsPending()) {
-    assert(secondary_cache_);
-    assert(e->sec_handle);
-    ready = e->sec_handle->IsReady();
-  }
-  return ready;
+  // TODO: check whether need this
+  printf("should not call this\n");
+  return false;
 }
 
 size_t RMLRUCacheShard::GetUsage() const {
@@ -645,11 +557,10 @@ std::string RMLRUCacheShard::GetPrintableOptions() const {
 }
 
 RMLRUCache::RMLRUCache(size_t capacity, int num_shard_bits,
-                   bool strict_capacity_limit, double high_pri_pool_ratio,
+                   bool strict_capacity_limit, double high_pri_pool_ratio, double rm_ratio,
                    std::shared_ptr<MemoryAllocator> allocator,
                    bool use_adaptive_mutex,
-                   CacheMetadataChargePolicy metadata_charge_policy,
-                   const std::shared_ptr<SecondaryCache>& secondary_cache)
+                   CacheMetadataChargePolicy metadata_charge_policy)
     : ShardedCache(capacity, num_shard_bits, strict_capacity_limit,
                    std::move(allocator)) {
   num_shards_ = 1 << num_shard_bits;
@@ -657,13 +568,13 @@ RMLRUCache::RMLRUCache(size_t capacity, int num_shard_bits,
       port::cacheline_aligned_alloc(sizeof(RMLRUCacheShard) * num_shards_));
   size_t per_shard = (capacity + (num_shards_ - 1)) / num_shards_;
   printf("RMLRUCache num_shards: %d, per_shard: %lu\n", num_shards_, per_shard);
+  remote_memory_ = std::make_shared<RemoteMemory>(capacity * rm_ratio);
   for (int i = 0; i < num_shards_; i++) {
     new (&shards_[i]) RMLRUCacheShard(
-        per_shard, strict_capacity_limit, high_pri_pool_ratio,
+        per_shard, strict_capacity_limit, high_pri_pool_ratio, rm_ratio,
         use_adaptive_mutex, metadata_charge_policy,
-        /* max_upper_hash_bits */ 32 - num_shard_bits, secondary_cache);
+        /* max_upper_hash_bits */ 32 - num_shard_bits, remote_memory_);
   }
-  secondary_cache_ = secondary_cache;
 }
 
 RMLRUCache::~RMLRUCache() {
@@ -730,41 +641,14 @@ double RMLRUCache::GetHighPriPoolRatio() {
 }
 
 void RMLRUCache::WaitAll(std::vector<Handle*>& handles) {
-  if (secondary_cache_) {
-    std::vector<SecondaryCacheResultHandle*> sec_handles;
-    sec_handles.reserve(handles.size());
-    for (Handle* handle : handles) {
-      if (!handle) {
-        continue;
-      }
-      RMLRUHandle* rm_lru_handle = reinterpret_cast<RMLRUHandle*>(handle);
-      if (!rm_lru_handle->IsPending()) {
-        continue;
-      }
-      sec_handles.emplace_back(rm_lru_handle->sec_handle);
-    }
-    secondary_cache_->WaitAll(sec_handles);
-    for (Handle* handle : handles) {
-      if (!handle) {
-        continue;
-      }
-      RMLRUHandle* rm_lru_handle = reinterpret_cast<RMLRUHandle*>(handle);
-      if (!rm_lru_handle->IsPending()) {
-        continue;
-      }
-      uint32_t hash = GetHash(handle);
-      RMLRUCacheShard* shard = static_cast<RMLRUCacheShard*>(GetShard(Shard(hash)));
-      shard->Promote(rm_lru_handle);
-    }
-  }
+  // TODO: no implemented
 }
 
 std::shared_ptr<Cache> NewRMLRUCache(
     size_t capacity, int num_shard_bits, bool strict_capacity_limit,
-    double high_pri_pool_ratio,
+    double high_pri_pool_ratio, double rm_ratio,
     std::shared_ptr<MemoryAllocator> memory_allocator, bool use_adaptive_mutex,
-    CacheMetadataChargePolicy metadata_charge_policy,
-    const std::shared_ptr<SecondaryCache>& secondary_cache) {
+    CacheMetadataChargePolicy metadata_charge_policy) {
   if (num_shard_bits >= 20) {
     return nullptr;  // the cache cannot be sharded into too many fine pieces
   }
@@ -775,27 +659,20 @@ std::shared_ptr<Cache> NewRMLRUCache(
   if (num_shard_bits < 0) {
     num_shard_bits = GetDefaultCacheShardBits(capacity);
   }
+  if (rm_ratio < 0.0 || rm_ratio > 1.0) {
+    // invalid rm_ratio
+    return nullptr;
+  }
   return std::make_shared<RMLRUCache>(
-      capacity, num_shard_bits, strict_capacity_limit, high_pri_pool_ratio,
-      std::move(memory_allocator), use_adaptive_mutex, metadata_charge_policy,
-      secondary_cache);
+      capacity, num_shard_bits, strict_capacity_limit, high_pri_pool_ratio, rm_ratio,
+      std::move(memory_allocator), use_adaptive_mutex, metadata_charge_policy);
 }
 
 std::shared_ptr<Cache> NewRMLRUCache(const RMLRUCacheOptions& cache_opts) {
   return NewRMLRUCache(
       cache_opts.capacity, cache_opts.num_shard_bits,
-      cache_opts.strict_capacity_limit, cache_opts.high_pri_pool_ratio,
+      cache_opts.strict_capacity_limit, cache_opts.high_pri_pool_ratio, cache_opts.rm_ratio,
       cache_opts.memory_allocator, cache_opts.use_adaptive_mutex,
-      cache_opts.metadata_charge_policy, cache_opts.secondary_cache);
-}
-
-std::shared_ptr<Cache> NewRMLRUCache(
-    size_t capacity, int num_shard_bits, bool strict_capacity_limit,
-    double high_pri_pool_ratio,
-    std::shared_ptr<MemoryAllocator> memory_allocator, bool use_adaptive_mutex,
-    CacheMetadataChargePolicy metadata_charge_policy) {
-  return NewRMLRUCache(capacity, num_shard_bits, strict_capacity_limit,
-                     high_pri_pool_ratio, memory_allocator, use_adaptive_mutex,
-                     metadata_charge_policy, nullptr);
+      cache_opts.metadata_charge_policy);
 }
 }  // namespace ROCKSDB_NAMESPACE

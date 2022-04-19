@@ -402,7 +402,6 @@ Status BlockBasedTable::InsertEntryToCache(
     Cache::Handle** cache_handle, Cache::Priority priority) const {
   Status s = Status::OK();
   if (cache_tier == CacheTier::kNonVolatileBlockTier) {
-    printf("Block: the size is: %lu\n", block_holder->size());
     s = block_cache->Insert(key, block_holder.get(), cache_helper, charge,
                             cache_handle, priority);
   } else {

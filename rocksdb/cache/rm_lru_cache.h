@@ -12,6 +12,7 @@
 #include <string>
 
 #include "cache/sharded_cache.h"
+#include "cache/remote_memory/rm.h"
 #include "port/lang.h"
 #include "port/malloc.h"
 #include "port/port.h"
@@ -294,10 +295,10 @@ class RMLRUHandleTable {
 class ALIGN_AS(CACHE_LINE_SIZE) RMLRUCacheShard final : public CacheShard {
  public:
   RMLRUCacheShard(size_t capacity, bool strict_capacity_limit,
-                double high_pri_pool_ratio, bool use_adaptive_mutex,
+                double high_pri_pool_ratio, double rm_ratio, bool use_adaptive_mutex,
                 CacheMetadataChargePolicy metadata_charge_policy,
                 int max_upper_hash_bits,
-                const std::shared_ptr<SecondaryCache>& secondary_cache);
+                const std::shared_ptr<RemoteMemory>& remote_memory);
   virtual ~RMLRUCacheShard() override = default;
 
   // Separate from constructor so caller can easily make an array of RMLRUCache
@@ -419,6 +420,15 @@ class ALIGN_AS(CACHE_LINE_SIZE) RMLRUCacheShard final : public CacheShard {
   // Remember the value to avoid recomputing each time.
   double high_pri_pool_capacity_;
 
+  // Remote memory ratio
+  double rm_ratio_;
+
+  // Local memory capacity
+  double lm_capacity_;
+
+  // Remote memory capacity
+  double rm_capacity_;
+
   // Dummy head of RMLRU list.
   // rm_lru.prev is newest entry, rm_lru.next is oldest entry.
   // RMLRU contains items which can be evicted, ie reference only by cache
@@ -451,7 +461,7 @@ class ALIGN_AS(CACHE_LINE_SIZE) RMLRUCacheShard final : public CacheShard {
   // don't mind mutex_ invoking the non-const actions.
   mutable port::Mutex mutex_;
 
-  std::shared_ptr<SecondaryCache> secondary_cache_;
+  std::shared_ptr<RemoteMemory> remote_memory_;
 };
 
 class RMLRUCache
@@ -461,12 +471,11 @@ class RMLRUCache
     : public ShardedCache {
  public:
   RMLRUCache(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
-           double high_pri_pool_ratio,
+           double high_pri_pool_ratio, double rm_ratio,
            std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
            bool use_adaptive_mutex = kDefaultToAdaptiveMutex,
            CacheMetadataChargePolicy metadata_charge_policy =
-               kDontChargeCacheMetadata,
-           const std::shared_ptr<SecondaryCache>& secondary_cache = nullptr);
+               kDontChargeCacheMetadata);
   virtual ~RMLRUCache();
   virtual const char* Name() const override { return "RMLRUCache"; }
   virtual CacheShard* GetShard(uint32_t shard) override;
@@ -486,7 +495,7 @@ class RMLRUCache
  private:
   RMLRUCacheShard* shards_ = nullptr;
   int num_shards_ = 0;
-  std::shared_ptr<SecondaryCache> secondary_cache_;
+  std::shared_ptr<RemoteMemory> remote_memory_;
 };
 
 }  // namespace ROCKSDB_NAMESPACE

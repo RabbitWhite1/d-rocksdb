@@ -54,6 +54,8 @@ static std::unordered_map<std::string, OptionTypeInfo>
 };
 #endif  // ROCKSDB_LITE
 
+// TODO: CreateFromString for RMLRUCache?
+
 Status SecondaryCache::CreateFromString(
     const ConfigOptions& config_options, const std::string& value,
     std::shared_ptr<SecondaryCache>* result) {

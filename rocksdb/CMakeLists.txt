@@ -631,6 +631,7 @@ set(SOURCES
         cache/lru_cache.cc
         cache/rm_lru_cache.cc
         cache/sharded_cache.cc
+        cache/remote_memory/rm.cc
         db/arena_wrapped_db_iter.cc
         db/blob/blob_fetcher.cc
         db/blob/blob_file_addition.cc
