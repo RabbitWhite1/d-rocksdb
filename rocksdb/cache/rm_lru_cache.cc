@@ -568,7 +568,7 @@ RMLRUCache::RMLRUCache(size_t capacity, int num_shard_bits,
       port::cacheline_aligned_alloc(sizeof(RMLRUCacheShard) * num_shards_));
   size_t per_shard = (capacity + (num_shards_ - 1)) / num_shards_;
   printf("RMLRUCache num_shards: %d, per_shard: %lu\n", num_shards_, per_shard);
-  remote_memory_ = std::make_shared<RemoteMemory>(capacity * rm_ratio);
+  remote_memory_ = std::make_shared<RemoteMemory>("10.0.0.5", capacity * rm_ratio);
   for (int i = 0; i < num_shards_; i++) {
     new (&shards_[i]) RMLRUCacheShard(
         per_shard, strict_capacity_limit, high_pri_pool_ratio, rm_ratio,
