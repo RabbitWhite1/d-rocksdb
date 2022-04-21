@@ -384,6 +384,8 @@ class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
   void Promote(DLRUHandle* e);
   void LMLRU_Remove(DLRUHandle* e);
   void LMLRU_Insert(DLRUHandle* e);
+  void RMLRU_Remove(DLRUHandle* e);
+  void RMLRU_Insert(DLRUHandle* e);
 
   // Overflow the last entry in high-pri pool to low-pri pool until size of
   // high-pri pool is no larger than the size specify by high_pri_pool_pct.
@@ -424,6 +426,28 @@ class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
   // Dummy head of lm LRU list.
   // lm_lru.prev is newest entry, lm_lru.next is oldest entry.
   // lm LRU contains items which can be evicted, ie reference only by cache
+  /*
+   *             [                 low pri pool     ]     [ high pri pool            ]           
+   *  (oldest)    ... --> ... --> ... --> ... --> ... --> ... --> ... --> ... --> ... --> rm_lru     (newest)
+   *              ^^^                             ^^^                             ^^^
+   *          rm_lru.next                      lm_lru_low_pri                  rm_lru.prev
+   * 
+   *
+   * Insert to low pri:
+   *             [                 low pri pool                            ]     [ high pri pool            ]           
+   *  (oldest)    ... --> ... --> ... --> ... -->   (inserted)   -->     ... --> ... --> ... --> ... --> ... --> rm_lru     (newest)
+   *              ^^^                                                    ^^^                             ^^^
+   *          rm_lru.next                                             lm_lru_low_pri                  rm_lru.prev
+   * 
+   *
+   * Insert to high pri:
+   *             [                 low pri pool     ]     [ high pri pool            ]           
+   *  (oldest)    ... --> ... --> ... --> ... --> ... --> ... --> ... --> ... --> ... -->   (inserted)   -->   rm_lru     (newest)
+   *              ^^^                             ^^^                             ^^^
+   *          rm_lru.next                      lm_lru_low_pri                  rm_lru.prev
+   * 
+   *
+   */
   DLRUHandle lm_lru_;
 
   // Pointer to head of low-pri pool in DLRU list.
@@ -450,8 +474,11 @@ class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
   // Memory size for entries residing in the cache
   size_t usage_;
 
-  // Memory size for entries residing only in the DLRU list
+  // Memory size for entries residing only in the LMLRU list
   size_t lm_lru_usage_;
+
+  // Memory size for entries residing only in the RMLRU list
+  size_t rm_lru_usage_;
 
   // mutex_ protects the following state.
   // We don't count mutex_ as the cache's internal state so semantically we

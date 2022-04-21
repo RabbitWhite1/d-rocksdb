@@ -195,7 +195,7 @@ void DLRUCacheShard::ApplyToSomeEntries(
 }
 
 void DLRUCacheShard::TEST_GetDLRUList(DLRUHandle** rm_lru,
-                                        DLRUHandle** lm_lru_low_pri) {
+                                      DLRUHandle** lm_lru_low_pri) {
   MutexLock l(&mutex_);
   *rm_lru = &lm_lru_;
   *lm_lru_low_pri = lm_lru_low_pri_;
@@ -262,6 +262,30 @@ void DLRUCacheShard::LMLRU_Insert(DLRUHandle* e) {
   lm_lru_usage_ += total_charge;
 }
 
+void DLRUCacheShard::RMLRU_Remove(DLRUHandle* e) {
+  assert(e->next != nullptr);
+  assert(e->prev != nullptr);
+  e->next->prev = e->prev;
+  e->prev->next = e->next;
+  e->prev = e->next = nullptr;
+  size_t total_charge = e->CalcTotalCharge(metadata_charge_policy_);
+  assert(rm_lru_usage_ >= total_charge);
+  rm_lru_usage_ -= total_charge;
+}
+
+void DLRUCacheShard::RMLRU_Insert(DLRUHandle* e) {
+  assert(e->next == nullptr);
+  assert(e->prev == nullptr);
+  size_t total_charge = e->CalcTotalCharge(metadata_charge_policy_);
+  // Inset "e" to head of RMLRU list.
+  e->next = &rm_lru_;
+  e->prev = rm_lru_.prev;
+  e->prev->next = e;
+  e->next->prev = e;
+  e->SetInHighPriPool(false);
+  rm_lru_usage_ += total_charge;
+}
+
 void DLRUCacheShard::MaintainPoolSize() {
   while (high_pri_pool_usage_ > high_pri_pool_capacity_) {
     // Overflow last entry in high-pri pool to low-pri pool.
@@ -276,8 +300,8 @@ void DLRUCacheShard::MaintainPoolSize() {
 }
 
 void DLRUCacheShard::EvictFromLMLRU(size_t charge,
-                                     autovector<DLRUHandle*>* deleted) {
-  while ((usage_ + charge) > capacity_ && lm_lru_.next != &lm_lru_) {
+                                    autovector<DLRUHandle*>* deleted) {
+  while ((lm_lru_usage_ + charge) > lm_capacity_ && lm_lru_.next != &lm_lru_) {
     DLRUHandle* old = lm_lru_.next;
     // DLRU list contains only elements which can be evicted
     assert(old->InCache() && !old->HasRefs());
@@ -285,6 +309,23 @@ void DLRUCacheShard::EvictFromLMLRU(size_t charge,
     table_.Remove(old->key(), old->hash);
     old->SetInCache(false);
     size_t old_total_charge = old->CalcTotalCharge(metadata_charge_policy_);
+    // evicting from local to remote, so usage didn't change,
+    // only when evicting from remote, total usage changes (see EvictFromRMLRU)
+    deleted->push_back(old);
+  }
+}
+
+void DLRUCacheShard::EvictFromRMLRU(size_t charge,
+                                    autovector<DLRUHandle*>* deleted) {
+  while ((rm_lru_usage_ + charge) > rm_capacity_ && rm_lru_.next != &rm_lru_) {
+    DLRUHandle* old = rm_lru_.next;
+    // DLRU list contains only elements which can be evicted
+    assert(old->InCache() && !old->HasRefs());
+    LMLRU_Remove(old);
+    table_.Remove(old->key(), old->hash);
+    old->SetInCache(false);
+    size_t old_total_charge = old->CalcTotalCharge(metadata_charge_policy_);
+    // only when evicting from remote, total usage changes
     assert(usage_ >= old_total_charge);
     usage_ -= old_total_charge;
     deleted->push_back(old);
@@ -316,7 +357,7 @@ void DLRUCacheShard::SetStrictCapacityLimit(bool strict_capacity_limit) {
 }
 
 Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
-                                   bool free_handle_on_fail) {
+                                  bool free_handle_on_fail) {
   Status s = Status::OK();
   autovector<DLRUHandle*> last_reference_list;
   size_t total_charge = e->CalcTotalCharge(metadata_charge_policy_);
@@ -473,11 +514,11 @@ bool DLRUCacheShard::Release(Cache::Handle* handle, bool force_erase) {
 }
 
 Status DLRUCacheShard::Insert(const Slice& key, uint32_t hash, void* value,
-                               size_t charge,
-                               void (*deleter)(const Slice& key, void* value),
-                               const Cache::CacheItemHelper* helper,
-                               Cache::Handle** handle,
-                               Cache::Priority priority) {
+                              size_t charge,
+                              void (*deleter)(const Slice& key, void* value),
+                              const Cache::CacheItemHelper* helper,
+                              Cache::Handle** handle,
+                              Cache::Priority priority) {
   // Allocate the memory here outside of the mutex
   // If the cache is full, we'll have to release it
   // It shouldn't happen very often though.
@@ -564,11 +605,11 @@ std::string DLRUCacheShard::GetPrintableOptions() const {
 }
 
 DLRUCache::DLRUCache(size_t capacity, int num_shard_bits,
-                       bool strict_capacity_limit, double high_pri_pool_ratio,
-                       double rm_ratio,
-                       std::shared_ptr<MemoryAllocator> allocator,
-                       bool use_adaptive_mutex,
-                       CacheMetadataChargePolicy metadata_charge_policy)
+                     bool strict_capacity_limit, double high_pri_pool_ratio,
+                     double rm_ratio,
+                     std::shared_ptr<MemoryAllocator> allocator,
+                     bool use_adaptive_mutex,
+                     CacheMetadataChargePolicy metadata_charge_policy)
     : ShardedCache(capacity, num_shard_bits, strict_capacity_limit,
                    std::move(allocator)) {
   num_shards_ = 1 << num_shard_bits;

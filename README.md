@@ -13,7 +13,7 @@
 - [x] 4. embed the rdma interface into rocksdb
 - [ ] 5. implement the remote memory logic for LRUCache.
   - [x] LRUHandle. modify its fields to support below operations
-  - [ ] rm_lru. implement rm_lru related methods (the simplest lru)
+  - [x] rm_lru. implement rm_lru related methods (the simplest lru)
   - [ ] eviction. 
     - [ ] evict local block to remote if exceeding local memory
     - [ ] evict remtote block if exceeding total memory
