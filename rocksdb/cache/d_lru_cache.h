@@ -21,36 +21,37 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-// RMLRU cache implementation. This class is not thread-safe.
+// DLRU cache implementation. This class is not thread-safe.
 
 // An entry is a variable length heap-allocated structure.
 // Entries are referenced by cache and/or by any external entity.
 // The cache keeps all its entries in a hash table. Some elements
-// are also stored on RMLRU list.
+// are also stored on DLRU list.
 //
-// RMLRUHandle can be in these states:
+// DLRUHandle can be in these states:
 // 1. Referenced externally AND in hash table.
-//    In that case the entry is *not* in the RMLRU list
+//    In that case the entry is *not* in the DLRU list
 //    (refs >= 1 && in_cache == true)
 // 2. Not referenced externally AND in hash table.
-//    In that case the entry is in the RMLRU list and can be freed.
+//    In that case the entry is in the DLRU list and can be freed.
 //    (refs == 0 && in_cache == true)
 // 3. Referenced externally AND not in hash table.
-//    In that case the entry is not in the RMLRU list and not in hash table.
+//    In that case the entry is not in the DLRU list and not in hash table.
 //    The entry can be freed when refs becomes 0.
 //    (refs >= 1 && in_cache == false)
 //
-// All newly created RMLRUHandles are in state 1. If you call
-// RMLRUCacheShard::Release on entry in state 1, it will go into state 2.
-// To move from state 1 to state 3, either call RMLRUCacheShard::Erase or
-// RMLRUCacheShard::Insert with the same key (but possibly different value).
-// To move from state 2 to state 1, use RMLRUCacheShard::Lookup.
+// All newly created DLRUHandles are in state 1. If you call
+// DLRUCacheShard::Release on entry in state 1, it will go into state 2.
+// To move from state 1 to state 3, either call DLRUCacheShard::Erase or
+// DLRUCacheShard::Insert with the same key (but possibly different value).
+// To move from state 2 to state 1, use DLRUCacheShard::Lookup.
 // Before destruction, make sure that no handles are in state 1. This means
-// that any successful RMLRUCacheShard::Lookup/RMLRUCacheShard::Insert have a
-// matching RMLRUCache::Release (to move into state 2) or RMLRUCacheShard::Erase
+// that any successful DLRUCacheShard::Lookup/DLRUCacheShard::Insert have a
+// matching DLRUCache::Release (to move into state 2) or DLRUCacheShard::Erase
 // (to move into state 3).
 
-struct RMLRUHandle {
+struct DLRUHandle {
+  // `value` points to the real data if `IsLocal`, otherwise, it is an `uint64_t` remote addr
   void* value;
   union Info {
     Info() {}
@@ -58,14 +59,11 @@ struct RMLRUHandle {
     Cache::DeleterFn deleter;
     const ShardedCache::CacheItemHelper* helper;
   } info_;
-  // An entry is not added to the RMLRUHandleTable until the secondary cache
+  // An entry is not added to the DLRUHandleTable until the secondary cache
   // lookup is complete, so its safe to have this union.
-  union {
-    RMLRUHandle* next_hash;
-    SecondaryCacheResultHandle* sec_handle;
-  };
-  RMLRUHandle* next;
-  RMLRUHandle* prev;
+  DLRUHandle* next_hash;
+  DLRUHandle* next;
+  DLRUHandle* prev;
   size_t charge;  // TODO(opt): Only allow uint32_t?
   size_t key_length;
   // The hash of key(). Used for fast sharding and comparisons.
@@ -188,7 +186,7 @@ struct RMLRUHandle {
     }
   }
 
-  void SetDataLocation(bool is_local) {
+  void SetLocal(bool is_local) {
     if (is_local) {
       flags |= IS_LOCAL;
     } else {
@@ -206,13 +204,6 @@ struct RMLRUHandle {
     if (!IsSecondaryCacheCompatible() && info_.deleter) {
       (*info_.deleter)(key(), value);
     } else if (IsSecondaryCacheCompatible()) {
-      if (IsPending()) {
-        assert(sec_handle != nullptr);
-        SecondaryCacheResultHandle* tmp_sec_handle = sec_handle;
-        tmp_sec_handle->Wait();
-        value = tmp_sec_handle->Value();
-        delete tmp_sec_handle;
-      }
       if (value) {
         (*info_.helper->del_cb)(key(), value);
       }
@@ -229,7 +220,7 @@ struct RMLRUHandle {
       meta_charge += malloc_usable_size(static_cast<void*>(this));
 #else
       // This is the size that is used when a new handle is created
-      meta_charge += sizeof(RMLRUHandle) - 1 + key_length;
+      meta_charge += sizeof(DLRUHandle) - 1 + key_length;
 #endif
     }
     return charge + meta_charge;
@@ -241,22 +232,22 @@ struct RMLRUHandle {
 // table implementations in some of the compiler/runtime combinations
 // we have tested.  E.g., readrandom speeds up by ~5% over the g++
 // 4.4.3's builtin hashtable.
-class RMLRUHandleTable {
+class DLRUHandleTable {
  public:
   // If the table uses more hash bits than `max_upper_hash_bits`,
   // it will eat into the bits used for sharding, which are constant
-  // for a given RMLRUHandleTable.
-  explicit RMLRUHandleTable(int max_upper_hash_bits);
-  ~RMLRUHandleTable();
+  // for a given DLRUHandleTable.
+  explicit DLRUHandleTable(int max_upper_hash_bits);
+  ~DLRUHandleTable();
 
-  RMLRUHandle* Lookup(const Slice& key, uint32_t hash);
-  RMLRUHandle* Insert(RMLRUHandle* h);
-  RMLRUHandle* Remove(const Slice& key, uint32_t hash);
+  DLRUHandle* Lookup(const Slice& key, uint32_t hash);
+  DLRUHandle* Insert(DLRUHandle* h);
+  DLRUHandle* Remove(const Slice& key, uint32_t hash);
 
   template <typename T>
   void ApplyToEntriesRange(T func, uint32_t index_begin, uint32_t index_end) {
     for (uint32_t i = index_begin; i < index_end; i++) {
-      RMLRUHandle* h = list_[i];
+      DLRUHandle* h = list_[i];
       while (h != nullptr) {
         auto n = h->next_hash;
         assert(h->InCache());
@@ -272,7 +263,7 @@ class RMLRUHandleTable {
   // Return a pointer to slot that points to a cache entry that
   // matches key/hash.  If there is no such cache entry, return a
   // pointer to the trailing slot in the corresponding linked list.
-  RMLRUHandle** FindPointer(const Slice& key, uint32_t hash);
+  DLRUHandle** FindPointer(const Slice& key, uint32_t hash);
 
   void Resize();
 
@@ -282,7 +273,7 @@ class RMLRUHandleTable {
 
   // The table consists of an array of buckets where each bucket is
   // a linked list of cache entries that hash into the bucket.
-  std::unique_ptr<RMLRUHandle*[]> list_;
+  std::unique_ptr<DLRUHandle*[]> list_;
 
   // Number of elements currently in the table
   uint32_t elems_;
@@ -292,16 +283,16 @@ class RMLRUHandleTable {
 };
 
 // A single shard of sharded cache.
-class ALIGN_AS(CACHE_LINE_SIZE) RMLRUCacheShard final : public CacheShard {
+class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
  public:
-  RMLRUCacheShard(size_t capacity, bool strict_capacity_limit,
+  DLRUCacheShard(size_t capacity, bool strict_capacity_limit,
                 double high_pri_pool_ratio, double rm_ratio, bool use_adaptive_mutex,
                 CacheMetadataChargePolicy metadata_charge_policy,
                 int max_upper_hash_bits,
                 const std::shared_ptr<RemoteMemory>& remote_memory);
-  virtual ~RMLRUCacheShard() override = default;
+  virtual ~DLRUCacheShard() override = default;
 
-  // Separate from constructor so caller can easily make an array of RMLRUCache
+  // Separate from constructor so caller can easily make an array of DLRUCache
   // if current usage is more than new capacity, the function will attempt to
   // free the needed space
   virtual void SetCapacity(size_t capacity) override;
@@ -364,45 +355,46 @@ class ALIGN_AS(CACHE_LINE_SIZE) RMLRUCacheShard final : public CacheShard {
 
   virtual std::string GetPrintableOptions() const override;
 
-  void TEST_GetRMLRUList(RMLRUHandle** rm_lru, RMLRUHandle** rm_lru_low_pri);
+  void TEST_GetDLRUList(DLRUHandle** rm_lru, DLRUHandle** lm_lru_low_pri);
 
-  //  Retrieves number of elements in RMLRU, for unit test purpose only
+  //  Retrieves number of elements in DLRU, for unit test purpose only
   //  not threadsafe
-  size_t TEST_GetRMLRUSize();
+  size_t TEST_GetDLRUSize();
 
   //  Retrieves high pri pool ratio
   double GetHighPriPoolRatio();
 
  private:
-  friend class RMLRUCache;
+  friend class DLRUCache;
   // Insert an item into the hash table and, if handle is null, insert into
-  // the RMLRU list. Older items are evicted as necessary. If the cache is full
+  // the DLRU list. Older items are evicted as necessary. If the cache is full
   // and free_handle_on_fail is true, the item is deleted and handle is set to.
-  Status InsertItem(RMLRUHandle* item, Cache::Handle** handle,
+  Status InsertItem(DLRUHandle* item, Cache::Handle** handle,
                     bool free_handle_on_fail);
   Status Insert(const Slice& key, uint32_t hash, void* value, size_t charge,
                 DeleterFn deleter, const Cache::CacheItemHelper* helper,
                 Cache::Handle** handle, Cache::Priority priority);
-  // Promote an item looked up from the secondary cache to the RMLRU cache. The
-  // item is only inserted into the hash table and not the RMLRU list, and only
+  // Promote an item looked up from the secondary cache to the DLRU cache. The
+  // item is only inserted into the hash table and not the DLRU list, and only
   // if the cache is not at full capacity, as is the case during Insert.  The
-  // caller should hold a reference on the RMLRUHandle. When the caller releases
-  // the last reference, the item is added to the RMLRU list.
+  // caller should hold a reference on the DLRUHandle. When the caller releases
+  // the last reference, the item is added to the DLRU list.
   // The item is promoted to the high pri or low pri pool as specified by the
   // caller in Lookup.
-  void Promote(RMLRUHandle* e);
-  void RMLRU_Remove(RMLRUHandle* e);
-  void RMLRU_Insert(RMLRUHandle* e);
+  void Promote(DLRUHandle* e);
+  void LMLRU_Remove(DLRUHandle* e);
+  void LMLRU_Insert(DLRUHandle* e);
 
   // Overflow the last entry in high-pri pool to low-pri pool until size of
   // high-pri pool is no larger than the size specify by high_pri_pool_pct.
   void MaintainPoolSize();
 
-  // Free some space following strict RMLRU policy until enough space
+  // Free some space following strict DLRU policy until enough space
   // to hold (usage_ + charge) is freed or the rm_lru list is empty
   // This function is not thread safe - it needs to be executed while
   // holding the mutex_
-  void EvictFromRMLRU(size_t charge, autovector<RMLRUHandle*>* deleted);
+  void EvictFromLMLRU(size_t charge, autovector<DLRUHandle*>* deleted);
+  void EvictFromRMLRU(size_t charge, autovector<DLRUHandle*>* deleted);
 
   // Initialized before use.
   size_t capacity_;
@@ -429,13 +421,18 @@ class ALIGN_AS(CACHE_LINE_SIZE) RMLRUCacheShard final : public CacheShard {
   // Remote memory capacity
   double rm_capacity_;
 
-  // Dummy head of RMLRU list.
-  // rm_lru.prev is newest entry, rm_lru.next is oldest entry.
-  // RMLRU contains items which can be evicted, ie reference only by cache
-  RMLRUHandle rm_lru_;
+  // Dummy head of lm LRU list.
+  // lm_lru.prev is newest entry, lm_lru.next is oldest entry.
+  // lm LRU contains items which can be evicted, ie reference only by cache
+  DLRUHandle lm_lru_;
 
-  // Pointer to head of low-pri pool in RMLRU list.
-  RMLRUHandle* rm_lru_low_pri_;
+  // Pointer to head of low-pri pool in DLRU list.
+  DLRUHandle* lm_lru_low_pri_;
+
+  // Dummy head of rm lru list.
+  // rm_lru.prev is newest entry, rm_lru.next is oldest entry.
+  // DLRU contains items which can be evicted, ie reference only by cache
+  DLRUHandle rm_lru_;
 
   // ------------^^^^^^^^^^^^^-----------
   // Not frequently modified data members
@@ -448,13 +445,13 @@ class ALIGN_AS(CACHE_LINE_SIZE) RMLRUCacheShard final : public CacheShard {
   // ------------------------------------
   // Frequently modified data members
   // ------------vvvvvvvvvvvvv-----------
-  RMLRUHandleTable table_;
+  DLRUHandleTable table_;
 
   // Memory size for entries residing in the cache
   size_t usage_;
 
-  // Memory size for entries residing only in the RMLRU list
-  size_t rm_lru_usage_;
+  // Memory size for entries residing only in the DLRU list
+  size_t lm_lru_usage_;
 
   // mutex_ protects the following state.
   // We don't count mutex_ as the cache's internal state so semantically we
@@ -464,20 +461,20 @@ class ALIGN_AS(CACHE_LINE_SIZE) RMLRUCacheShard final : public CacheShard {
   std::shared_ptr<RemoteMemory> remote_memory_;
 };
 
-class RMLRUCache
+class DLRUCache
 #ifdef NDEBUG
     final
 #endif
     : public ShardedCache {
  public:
-  RMLRUCache(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
+  DLRUCache(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
            double high_pri_pool_ratio, double rm_ratio,
            std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
            bool use_adaptive_mutex = kDefaultToAdaptiveMutex,
            CacheMetadataChargePolicy metadata_charge_policy =
                kDontChargeCacheMetadata);
-  virtual ~RMLRUCache();
-  virtual const char* Name() const override { return "RMLRUCache"; }
+  virtual ~DLRUCache();
+  virtual const char* Name() const override { return "DLRUCache"; }
   virtual CacheShard* GetShard(uint32_t shard) override;
   virtual const CacheShard* GetShard(uint32_t shard) const override;
   virtual void* Value(Handle* handle) override;
@@ -487,13 +484,13 @@ class RMLRUCache
   virtual void DisownData() override;
   virtual void WaitAll(std::vector<Handle*>& handles) override;
 
-  //  Retrieves number of elements in RMLRU, for unit test purpose only
-  size_t TEST_GetRMLRUSize();
+  //  Retrieves number of elements in DLRU, for unit test purpose only
+  size_t TEST_GetDLRUSize();
   //  Retrieves high pri pool ratio
   double GetHighPriPoolRatio();
 
  private:
-  RMLRUCacheShard* shards_ = nullptr;
+  DLRUCacheShard* shards_ = nullptr;
   int num_shards_ = 0;
   std::shared_ptr<RemoteMemory> remote_memory_;
 };

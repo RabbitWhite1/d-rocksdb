@@ -7,7 +7,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
-#include "cache/rm_lru_cache.h"
+#include "cache/d_lru_cache.h"
 
 #include <cassert>
 #include <cstdint>
@@ -20,15 +20,15 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-RMLRUHandleTable::RMLRUHandleTable(int max_upper_hash_bits)
+DLRUHandleTable::DLRUHandleTable(int max_upper_hash_bits)
     : length_bits_(/* historical starting size*/ 4),
-      list_(new RMLRUHandle* [size_t{1} << length_bits_] {}),
+      list_(new DLRUHandle* [size_t{1} << length_bits_] {}),
       elems_(0),
       max_length_bits_(max_upper_hash_bits) {}
 
-RMLRUHandleTable::~RMLRUHandleTable() {
+DLRUHandleTable::~DLRUHandleTable() {
   ApplyToEntriesRange(
-      [](RMLRUHandle* h) {
+      [](DLRUHandle* h) {
         if (!h->HasRefs()) {
           h->Free();
         }
@@ -36,13 +36,13 @@ RMLRUHandleTable::~RMLRUHandleTable() {
       0, uint32_t{1} << length_bits_);
 }
 
-RMLRUHandle* RMLRUHandleTable:: Lookup(const Slice& key, uint32_t hash) {
+DLRUHandle* DLRUHandleTable::Lookup(const Slice& key, uint32_t hash) {
   return *FindPointer(key, hash);
 }
 
-RMLRUHandle* RMLRUHandleTable::Insert(RMLRUHandle* h) {
-  RMLRUHandle** ptr = FindPointer(h->key(), h->hash);
-  RMLRUHandle* old = *ptr;
+DLRUHandle* DLRUHandleTable::Insert(DLRUHandle* h) {
+  DLRUHandle** ptr = FindPointer(h->key(), h->hash);
+  DLRUHandle* old = *ptr;
   h->next_hash = (old == nullptr ? nullptr : old->next_hash);
   *ptr = h;
   if (old == nullptr) {
@@ -56,9 +56,9 @@ RMLRUHandle* RMLRUHandleTable::Insert(RMLRUHandle* h) {
   return old;
 }
 
-RMLRUHandle* RMLRUHandleTable::Remove(const Slice& key, uint32_t hash) {
-  RMLRUHandle** ptr = FindPointer(key, hash);
-  RMLRUHandle* result = *ptr;
+DLRUHandle* DLRUHandleTable::Remove(const Slice& key, uint32_t hash) {
+  DLRUHandle** ptr = FindPointer(key, hash);
+  DLRUHandle* result = *ptr;
   if (result != nullptr) {
     *ptr = result->next_hash;
     --elems_;
@@ -66,15 +66,15 @@ RMLRUHandle* RMLRUHandleTable::Remove(const Slice& key, uint32_t hash) {
   return result;
 }
 
-RMLRUHandle** RMLRUHandleTable::FindPointer(const Slice& key, uint32_t hash) {
-  RMLRUHandle** ptr = &list_[hash >> (32 - length_bits_)];
+DLRUHandle** DLRUHandleTable::FindPointer(const Slice& key, uint32_t hash) {
+  DLRUHandle** ptr = &list_[hash >> (32 - length_bits_)];
   while (*ptr != nullptr && ((*ptr)->hash != hash || key != (*ptr)->key())) {
     ptr = &(*ptr)->next_hash;
   }
   return ptr;
 }
 
-void RMLRUHandleTable::Resize() {
+void DLRUHandleTable::Resize() {
   if (length_bits_ >= max_length_bits_) {
     // Due to reaching limit of hash information, if we made the table
     // bigger, we would allocate more addresses but only the same
@@ -88,16 +88,16 @@ void RMLRUHandleTable::Resize() {
 
   uint32_t old_length = uint32_t{1} << length_bits_;
   int new_length_bits = length_bits_ + 1;
-  std::unique_ptr<RMLRUHandle* []> new_list {
-    new RMLRUHandle* [size_t{1} << new_length_bits] {}
+  std::unique_ptr<DLRUHandle* []> new_list {
+    new DLRUHandle* [size_t{1} << new_length_bits] {}
   };
   uint32_t count = 0;
   for (uint32_t i = 0; i < old_length; i++) {
-    RMLRUHandle* h = list_[i];
+    DLRUHandle* h = list_[i];
     while (h != nullptr) {
-      RMLRUHandle* next = h->next_hash;
+      DLRUHandle* next = h->next_hash;
       uint32_t hash = h->hash;
-      RMLRUHandle** ptr = &new_list[hash >> (32 - new_length_bits)];
+      DLRUHandle** ptr = &new_list[hash >> (32 - new_length_bits)];
       h->next_hash = *ptr;
       *ptr = h;
       h = next;
@@ -109,10 +109,10 @@ void RMLRUHandleTable::Resize() {
   length_bits_ = new_length_bits;
 }
 
-RMLRUCacheShard::RMLRUCacheShard(
-    size_t capacity, bool strict_capacity_limit, double high_pri_pool_ratio, double rm_ratio,
-    bool use_adaptive_mutex, CacheMetadataChargePolicy metadata_charge_policy,
-    int max_upper_hash_bits,
+DLRUCacheShard::DLRUCacheShard(
+    size_t capacity, bool strict_capacity_limit, double high_pri_pool_ratio,
+    double rm_ratio, bool use_adaptive_mutex,
+    CacheMetadataChargePolicy metadata_charge_policy, int max_upper_hash_bits,
     const std::shared_ptr<RemoteMemory>& remote_memory)
     : capacity_(0),
       high_pri_pool_usage_(0),
@@ -122,26 +122,28 @@ RMLRUCacheShard::RMLRUCacheShard(
       rm_ratio_(rm_ratio),
       table_(max_upper_hash_bits),
       usage_(0),
-      rm_lru_usage_(0),
+      lm_lru_usage_(0),
       mutex_(use_adaptive_mutex),
       remote_memory_(remote_memory) {
   set_metadata_charge_policy(metadata_charge_policy);
   // Make empty circular linked list
+  lm_lru_.next = &lm_lru_;
+  lm_lru_.prev = &lm_lru_;
+  lm_lru_low_pri_ = &lm_lru_;
   rm_lru_.next = &rm_lru_;
   rm_lru_.prev = &rm_lru_;
-  rm_lru_low_pri_ = &rm_lru_;
   SetCapacity(capacity);
 }
 
-void RMLRUCacheShard::EraseUnRefEntries() {
-  autovector<RMLRUHandle*> last_reference_list;
+void DLRUCacheShard::EraseUnRefEntries() {
+  autovector<DLRUHandle*> last_reference_list;
   {
     MutexLock l(&mutex_);
-    while (rm_lru_.next != &rm_lru_) {
-      RMLRUHandle* old = rm_lru_.next;
-      // RMLRU list contains only elements which can be evicted
+    while (lm_lru_.next != &lm_lru_) {
+      DLRUHandle* old = lm_lru_.next;
+      // DLRU list contains only elements which can be evicted
       assert(old->InCache() && !old->HasRefs());
-      RMLRU_Remove(old);
+      LMLRU_Remove(old);
       table_.Remove(old->key(), old->hash);
       old->SetInCache(false);
       size_t total_charge = old->CalcTotalCharge(metadata_charge_policy_);
@@ -156,7 +158,7 @@ void RMLRUCacheShard::EraseUnRefEntries() {
   }
 }
 
-void RMLRUCacheShard::ApplyToSomeEntries(
+void DLRUCacheShard::ApplyToSomeEntries(
     const std::function<void(const Slice& key, void* value, size_t charge,
                              DeleterFn deleter)>& callback,
     uint32_t average_entries_per_lock, uint32_t* state) {
@@ -183,7 +185,7 @@ void RMLRUCacheShard::ApplyToSomeEntries(
   }
 
   table_.ApplyToEntriesRange(
-      [callback](RMLRUHandle* h) {
+      [callback](DLRUHandle* h) {
         DeleterFn deleter = h->IsSecondaryCacheCompatible()
                                 ? h->info_.helper->del_cb
                                 : h->info_.deleter;
@@ -192,54 +194,55 @@ void RMLRUCacheShard::ApplyToSomeEntries(
       index_begin, index_end);
 }
 
-void RMLRUCacheShard::TEST_GetRMLRUList(RMLRUHandle** rm_lru, RMLRUHandle** rm_lru_low_pri) {
+void DLRUCacheShard::TEST_GetDLRUList(DLRUHandle** rm_lru,
+                                        DLRUHandle** lm_lru_low_pri) {
   MutexLock l(&mutex_);
-  *rm_lru = &rm_lru_;
-  *rm_lru_low_pri = rm_lru_low_pri_;
+  *rm_lru = &lm_lru_;
+  *lm_lru_low_pri = lm_lru_low_pri_;
 }
 
-size_t RMLRUCacheShard::TEST_GetRMLRUSize() {
+size_t DLRUCacheShard::TEST_GetDLRUSize() {
   MutexLock l(&mutex_);
-  RMLRUHandle* rm_lru_handle = rm_lru_.next;
-  size_t rm_lru_size = 0;
-  while (rm_lru_handle != &rm_lru_) {
-    rm_lru_size++;
-    rm_lru_handle = rm_lru_handle->next;
+  DLRUHandle* lm_lru_handle = lm_lru_.next;
+  size_t lm_lru_size = 0;
+  while (lm_lru_handle != &lm_lru_) {
+    lm_lru_size++;
+    lm_lru_handle = lm_lru_handle->next;
   }
-  return rm_lru_size;
+  return lm_lru_size;
 }
 
-double RMLRUCacheShard::GetHighPriPoolRatio() {
+double DLRUCacheShard::GetHighPriPoolRatio() {
   MutexLock l(&mutex_);
   return high_pri_pool_ratio_;
 }
 
-void RMLRUCacheShard::RMLRU_Remove(RMLRUHandle* e) {
+void DLRUCacheShard::LMLRU_Remove(DLRUHandle* e) {
   assert(e->next != nullptr);
   assert(e->prev != nullptr);
-  if (rm_lru_low_pri_ == e) {
-    rm_lru_low_pri_ = e->prev;
+  if (lm_lru_low_pri_ == e) {
+    lm_lru_low_pri_ = e->prev;
   }
   e->next->prev = e->prev;
   e->prev->next = e->next;
   e->prev = e->next = nullptr;
   size_t total_charge = e->CalcTotalCharge(metadata_charge_policy_);
-  assert(rm_lru_usage_ >= total_charge);
-  rm_lru_usage_ -= total_charge;
+  assert(lm_lru_usage_ >= total_charge);
+  lm_lru_usage_ -= total_charge;
   if (e->InHighPriPool()) {
     assert(high_pri_pool_usage_ >= total_charge);
     high_pri_pool_usage_ -= total_charge;
   }
 }
 
-void RMLRUCacheShard::RMLRU_Insert(RMLRUHandle* e) {
+void DLRUCacheShard::LMLRU_Insert(DLRUHandle* e) {
   assert(e->next == nullptr);
   assert(e->prev == nullptr);
   size_t total_charge = e->CalcTotalCharge(metadata_charge_policy_);
   if (high_pri_pool_ratio_ > 0 && (e->IsHighPri() || e->HasHit())) {
-    // Inset "e" to head of RMLRU list.
-    e->next = &rm_lru_;
-    e->prev = rm_lru_.prev;
+    // Inset "e" to head of DLRU list.
+    e->next = &lm_lru_;
+    e->prev = lm_lru_.prev;
     e->prev->next = e;
     e->next->prev = e;
     e->SetInHighPriPool(true);
@@ -247,37 +250,38 @@ void RMLRUCacheShard::RMLRU_Insert(RMLRUHandle* e) {
     MaintainPoolSize();
   } else {
     // Insert "e" to the head of low-pri pool. Note that when
-    // high_pri_pool_ratio is 0, head of low-pri pool is also head of RMLRU list.
-    e->next = rm_lru_low_pri_->next;
-    e->prev = rm_lru_low_pri_;
+    // high_pri_pool_ratio is 0, head of low-pri pool is also head of DLRU
+    // list.
+    e->next = lm_lru_low_pri_->next;
+    e->prev = lm_lru_low_pri_;
     e->prev->next = e;
     e->next->prev = e;
     e->SetInHighPriPool(false);
-    rm_lru_low_pri_ = e;
+    lm_lru_low_pri_ = e;
   }
-  rm_lru_usage_ += total_charge;
+  lm_lru_usage_ += total_charge;
 }
 
-void RMLRUCacheShard::MaintainPoolSize() {
+void DLRUCacheShard::MaintainPoolSize() {
   while (high_pri_pool_usage_ > high_pri_pool_capacity_) {
     // Overflow last entry in high-pri pool to low-pri pool.
-    rm_lru_low_pri_ = rm_lru_low_pri_->next;
-    assert(rm_lru_low_pri_ != &rm_lru_);
-    rm_lru_low_pri_->SetInHighPriPool(false);
+    lm_lru_low_pri_ = lm_lru_low_pri_->next;
+    assert(lm_lru_low_pri_ != &lm_lru_);
+    lm_lru_low_pri_->SetInHighPriPool(false);
     size_t total_charge =
-        rm_lru_low_pri_->CalcTotalCharge(metadata_charge_policy_);
+        lm_lru_low_pri_->CalcTotalCharge(metadata_charge_policy_);
     assert(high_pri_pool_usage_ >= total_charge);
     high_pri_pool_usage_ -= total_charge;
   }
 }
 
-void RMLRUCacheShard::EvictFromRMLRU(size_t charge,
-                                 autovector<RMLRUHandle*>* deleted) {
-  while ((usage_ + charge) > capacity_ && rm_lru_.next != &rm_lru_) {
-    RMLRUHandle* old = rm_lru_.next;
-    // RMLRU list contains only elements which can be evicted
+void DLRUCacheShard::EvictFromLMLRU(size_t charge,
+                                     autovector<DLRUHandle*>* deleted) {
+  while ((usage_ + charge) > capacity_ && lm_lru_.next != &lm_lru_) {
+    DLRUHandle* old = lm_lru_.next;
+    // DLRU list contains only elements which can be evicted
     assert(old->InCache() && !old->HasRefs());
-    RMLRU_Remove(old);
+    LMLRU_Remove(old);
     table_.Remove(old->key(), old->hash);
     old->SetInCache(false);
     size_t old_total_charge = old->CalcTotalCharge(metadata_charge_policy_);
@@ -287,15 +291,15 @@ void RMLRUCacheShard::EvictFromRMLRU(size_t charge,
   }
 }
 
-void RMLRUCacheShard::SetCapacity(size_t capacity) {
-  autovector<RMLRUHandle*> last_reference_list;
+void DLRUCacheShard::SetCapacity(size_t capacity) {
+  autovector<DLRUHandle*> last_reference_list;
   {
     MutexLock l(&mutex_);
     capacity_ = capacity;
     high_pri_pool_capacity_ = capacity_ * high_pri_pool_ratio_;
-    lm_capacity_ = capacity * (1-rm_ratio_);
+    lm_capacity_ = capacity * (1 - rm_ratio_);
     rm_capacity_ = capacity_ * rm_ratio_;
-    EvictFromRMLRU(0, &last_reference_list);
+    EvictFromLMLRU(0, &last_reference_list);
   }
 
   // Try to insert the evicted entries into tiered cache
@@ -306,23 +310,23 @@ void RMLRUCacheShard::SetCapacity(size_t capacity) {
   }
 }
 
-void RMLRUCacheShard::SetStrictCapacityLimit(bool strict_capacity_limit) {
+void DLRUCacheShard::SetStrictCapacityLimit(bool strict_capacity_limit) {
   MutexLock l(&mutex_);
   strict_capacity_limit_ = strict_capacity_limit;
 }
 
-Status RMLRUCacheShard::InsertItem(RMLRUHandle* e, Cache::Handle** handle,
-                                 bool free_handle_on_fail) {
+Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
+                                   bool free_handle_on_fail) {
   Status s = Status::OK();
-  autovector<RMLRUHandle*> last_reference_list;
+  autovector<DLRUHandle*> last_reference_list;
   size_t total_charge = e->CalcTotalCharge(metadata_charge_policy_);
 
   {
     MutexLock l(&mutex_);
 
-    // Free the space following strict RMLRU policy until enough space
+    // Free the space following strict DLRU policy until enough space
     // is freed or the rm_lru list is empty
-    EvictFromRMLRU(total_charge, &last_reference_list);
+    EvictFromLMLRU(total_charge, &last_reference_list);
 
     if ((usage_ + total_charge) > capacity_ &&
         (strict_capacity_limit_ || handle == nullptr)) {
@@ -336,20 +340,20 @@ Status RMLRUCacheShard::InsertItem(RMLRUHandle* e, Cache::Handle** handle,
           delete[] reinterpret_cast<char*>(e);
           *handle = nullptr;
         }
-        s = Status::Incomplete("Insert failed due to RMLRU cache being full.");
+        s = Status::Incomplete("Insert failed due to DLRU cache being full.");
       }
     } else {
       // Insert into the cache. Note that the cache might get larger than its
       // capacity if not enough space was freed up.
-      RMLRUHandle* old = table_.Insert(e);
+      DLRUHandle* old = table_.Insert(e);
       usage_ += total_charge;
       if (old != nullptr) {
         s = Status::OkOverwritten();
         assert(old->InCache());
         old->SetInCache(false);
         if (!old->HasRefs()) {
-          // old is on RMLRU because it's in cache and its reference count is 0
-          RMLRU_Remove(old);
+          // old is on DLRU because it's in cache and its reference count is 0
+          LMLRU_Remove(old);
           size_t old_total_charge =
               old->CalcTotalCharge(metadata_charge_policy_);
           assert(usage_ >= old_total_charge);
@@ -358,7 +362,7 @@ Status RMLRUCacheShard::InsertItem(RMLRUHandle* e, Cache::Handle** handle,
         }
       }
       if (handle == nullptr) {
-        RMLRU_Insert(e);
+        LMLRU_Insert(e);
       } else {
         // If caller already holds a ref, no need to take one here
         if (!e->HasRefs()) {
@@ -379,25 +383,26 @@ Status RMLRUCacheShard::InsertItem(RMLRUHandle* e, Cache::Handle** handle,
   return s;
 }
 
-void RMLRUCacheShard::Promote(RMLRUHandle* e) {
+void DLRUCacheShard::Promote(DLRUHandle* e) {
   // TODO: check whether need this
   printf("should not call this\n");
 }
 
-Cache::Handle* RMLRUCacheShard::Lookup(
+Cache::Handle* DLRUCacheShard::Lookup(
     const Slice& key, uint32_t hash,
     const ShardedCache::CacheItemHelper* helper,
     const ShardedCache::CreateCallback& create_cb, Cache::Priority priority,
     bool wait, Statistics* stats) {
-  RMLRUHandle* e = nullptr;
+  DLRUHandle* e = nullptr;
   {
     MutexLock l(&mutex_);
     e = table_.Lookup(key, hash);
     if (e != nullptr) {
       assert(e->InCache());
       if (!e->HasRefs()) {
-        // The entry is in RMLRU since it's in hash and has no external references
-        RMLRU_Remove(e);
+        // The entry is in DLRU since it's in hash and has no external
+        // references
+        LMLRU_Remove(e);
       }
       e->Ref();
       e->SetHit();
@@ -407,8 +412,8 @@ Cache::Handle* RMLRUCacheShard::Lookup(
   return reinterpret_cast<Cache::Handle*>(e);
 }
 
-bool RMLRUCacheShard::Ref(Cache::Handle* h) {
-  RMLRUHandle* e = reinterpret_cast<RMLRUHandle*>(h);
+bool DLRUCacheShard::Ref(Cache::Handle* h) {
+  DLRUHandle* e = reinterpret_cast<DLRUHandle*>(h);
   MutexLock l(&mutex_);
   // To create another reference - entry must be already externally referenced
   assert(e->HasRefs());
@@ -416,18 +421,18 @@ bool RMLRUCacheShard::Ref(Cache::Handle* h) {
   return true;
 }
 
-void RMLRUCacheShard::SetHighPriorityPoolRatio(double high_pri_pool_ratio) {
+void DLRUCacheShard::SetHighPriorityPoolRatio(double high_pri_pool_ratio) {
   MutexLock l(&mutex_);
   high_pri_pool_ratio_ = high_pri_pool_ratio;
   high_pri_pool_capacity_ = capacity_ * high_pri_pool_ratio_;
   MaintainPoolSize();
 }
 
-bool RMLRUCacheShard::Release(Cache::Handle* handle, bool force_erase) {
+bool DLRUCacheShard::Release(Cache::Handle* handle, bool force_erase) {
   if (handle == nullptr) {
     return false;
   }
-  RMLRUHandle* e = reinterpret_cast<RMLRUHandle*>(handle);
+  DLRUHandle* e = reinterpret_cast<DLRUHandle*>(handle);
   bool last_reference = false;
   {
     MutexLock l(&mutex_);
@@ -435,14 +440,14 @@ bool RMLRUCacheShard::Release(Cache::Handle* handle, bool force_erase) {
     if (last_reference && e->InCache()) {
       // The item is still in cache, and nobody else holds a reference to it
       if (usage_ > capacity_ || force_erase) {
-        // The RMLRU list must be empty since the cache is full
-        assert(rm_lru_.next == &rm_lru_ || force_erase);
+        // The DLRU list must be empty since the cache is full
+        assert(lm_lru_.next == &lm_lru_ || force_erase);
         // Take this opportunity and remove the item
         table_.Remove(e->key(), e->hash);
         e->SetInCache(false);
       } else {
-        // Put the item back on the RMLRU list, and don't free it
-        RMLRU_Insert(e);
+        // Put the item back on the DLRU list, and don't free it
+        LMLRU_Insert(e);
         last_reference = false;
       }
     }
@@ -467,16 +472,17 @@ bool RMLRUCacheShard::Release(Cache::Handle* handle, bool force_erase) {
   return last_reference;
 }
 
-Status RMLRUCacheShard::Insert(const Slice& key, uint32_t hash, void* value,
-                             size_t charge,
-                             void (*deleter)(const Slice& key, void* value),
-                             const Cache::CacheItemHelper* helper,
-                             Cache::Handle** handle, Cache::Priority priority) {
+Status DLRUCacheShard::Insert(const Slice& key, uint32_t hash, void* value,
+                               size_t charge,
+                               void (*deleter)(const Slice& key, void* value),
+                               const Cache::CacheItemHelper* helper,
+                               Cache::Handle** handle,
+                               Cache::Priority priority) {
   // Allocate the memory here outside of the mutex
   // If the cache is full, we'll have to release it
   // It shouldn't happen very often though.
-  RMLRUHandle* e = reinterpret_cast<RMLRUHandle*>(
-      new char[sizeof(RMLRUHandle) - 1 + key.size()]);
+  DLRUHandle* e = reinterpret_cast<DLRUHandle*>(
+      new char[sizeof(DLRUHandle) - 1 + key.size()]);
 
   e->value = value;
   e->flags = 0;
@@ -501,8 +507,8 @@ Status RMLRUCacheShard::Insert(const Slice& key, uint32_t hash, void* value,
   return InsertItem(e, handle, /* free_handle_on_fail */ true);
 }
 
-void RMLRUCacheShard::Erase(const Slice& key, uint32_t hash) {
-  RMLRUHandle* e;
+void DLRUCacheShard::Erase(const Slice& key, uint32_t hash) {
+  DLRUHandle* e;
   bool last_reference = false;
   {
     MutexLock l(&mutex_);
@@ -511,8 +517,9 @@ void RMLRUCacheShard::Erase(const Slice& key, uint32_t hash) {
       assert(e->InCache());
       e->SetInCache(false);
       if (!e->HasRefs()) {
-        // The entry is in RMLRU since it's in hash and has no external references
-        RMLRU_Remove(e);
+        // The entry is in DLRU since it's in hash and has no external
+        // references
+        LMLRU_Remove(e);
         size_t total_charge = e->CalcTotalCharge(metadata_charge_policy_);
         assert(usage_ >= total_charge);
         usage_ -= total_charge;
@@ -528,24 +535,24 @@ void RMLRUCacheShard::Erase(const Slice& key, uint32_t hash) {
   }
 }
 
-bool RMLRUCacheShard::IsReady(Cache::Handle* handle) {
+bool DLRUCacheShard::IsReady(Cache::Handle* handle) {
   // TODO: check whether need this
   printf("should not call this\n");
   return false;
 }
 
-size_t RMLRUCacheShard::GetUsage() const {
+size_t DLRUCacheShard::GetUsage() const {
   MutexLock l(&mutex_);
   return usage_;
 }
 
-size_t RMLRUCacheShard::GetPinnedUsage() const {
+size_t DLRUCacheShard::GetPinnedUsage() const {
   MutexLock l(&mutex_);
-  assert(usage_ >= rm_lru_usage_);
-  return usage_ - rm_lru_usage_;
+  assert(usage_ >= lm_lru_usage_);
+  return usage_ - lm_lru_usage_;
 }
 
-std::string RMLRUCacheShard::GetPrintableOptions() const {
+std::string DLRUCacheShard::GetPrintableOptions() const {
   const int kBufferSize = 200;
   char buffer[kBufferSize];
   {
@@ -556,55 +563,57 @@ std::string RMLRUCacheShard::GetPrintableOptions() const {
   return std::string(buffer);
 }
 
-RMLRUCache::RMLRUCache(size_t capacity, int num_shard_bits,
-                   bool strict_capacity_limit, double high_pri_pool_ratio, double rm_ratio,
-                   std::shared_ptr<MemoryAllocator> allocator,
-                   bool use_adaptive_mutex,
-                   CacheMetadataChargePolicy metadata_charge_policy)
+DLRUCache::DLRUCache(size_t capacity, int num_shard_bits,
+                       bool strict_capacity_limit, double high_pri_pool_ratio,
+                       double rm_ratio,
+                       std::shared_ptr<MemoryAllocator> allocator,
+                       bool use_adaptive_mutex,
+                       CacheMetadataChargePolicy metadata_charge_policy)
     : ShardedCache(capacity, num_shard_bits, strict_capacity_limit,
                    std::move(allocator)) {
   num_shards_ = 1 << num_shard_bits;
-  shards_ = reinterpret_cast<RMLRUCacheShard*>(
-      port::cacheline_aligned_alloc(sizeof(RMLRUCacheShard) * num_shards_));
+  shards_ = reinterpret_cast<DLRUCacheShard*>(
+      port::cacheline_aligned_alloc(sizeof(DLRUCacheShard) * num_shards_));
   size_t per_shard = (capacity + (num_shards_ - 1)) / num_shards_;
-  printf("RMLRUCache num_shards: %d, per_shard: %lu\n", num_shards_, per_shard);
-  remote_memory_ = std::make_shared<RemoteMemory>("10.0.0.5", capacity * rm_ratio);
+  printf("DLRUCache num_shards: %d, per_shard: %lu\n", num_shards_, per_shard);
+  remote_memory_ =
+      std::make_shared<RemoteMemory>("10.0.0.5", capacity * rm_ratio);
   for (int i = 0; i < num_shards_; i++) {
-    new (&shards_[i]) RMLRUCacheShard(
+    new (&shards_[i]) DLRUCacheShard(
         per_shard, strict_capacity_limit, high_pri_pool_ratio, rm_ratio,
         use_adaptive_mutex, metadata_charge_policy,
         /* max_upper_hash_bits */ 32 - num_shard_bits, remote_memory_);
   }
 }
 
-RMLRUCache::~RMLRUCache() {
+DLRUCache::~DLRUCache() {
   if (shards_ != nullptr) {
     assert(num_shards_ > 0);
     for (int i = 0; i < num_shards_; i++) {
-      shards_[i].~RMLRUCacheShard();
+      shards_[i].~DLRUCacheShard();
     }
     port::cacheline_aligned_free(shards_);
   }
 }
 
-CacheShard* RMLRUCache::GetShard(uint32_t shard) {
+CacheShard* DLRUCache::GetShard(uint32_t shard) {
   return reinterpret_cast<CacheShard*>(&shards_[shard]);
 }
 
-const CacheShard* RMLRUCache::GetShard(uint32_t shard) const {
+const CacheShard* DLRUCache::GetShard(uint32_t shard) const {
   return reinterpret_cast<CacheShard*>(&shards_[shard]);
 }
 
-void* RMLRUCache::Value(Handle* handle) {
-  return reinterpret_cast<const RMLRUHandle*>(handle)->value;
+void* DLRUCache::Value(Handle* handle) {
+  return reinterpret_cast<const DLRUHandle*>(handle)->value;
 }
 
-size_t RMLRUCache::GetCharge(Handle* handle) const {
-  return reinterpret_cast<const RMLRUHandle*>(handle)->charge;
+size_t DLRUCache::GetCharge(Handle* handle) const {
+  return reinterpret_cast<const DLRUHandle*>(handle)->charge;
 }
 
-Cache::DeleterFn RMLRUCache::GetDeleter(Handle* handle) const {
-  auto h = reinterpret_cast<const RMLRUHandle*>(handle);
+Cache::DeleterFn DLRUCache::GetDeleter(Handle* handle) const {
+  auto h = reinterpret_cast<const DLRUHandle*>(handle);
   if (h->IsSecondaryCacheCompatible()) {
     return h->info_.helper->del_cb;
   } else {
@@ -612,11 +621,11 @@ Cache::DeleterFn RMLRUCache::GetDeleter(Handle* handle) const {
   }
 }
 
-uint32_t RMLRUCache::GetHash(Handle* handle) const {
-  return reinterpret_cast<const RMLRUHandle*>(handle)->hash;
+uint32_t DLRUCache::GetHash(Handle* handle) const {
+  return reinterpret_cast<const DLRUHandle*>(handle)->hash;
 }
 
-void RMLRUCache::DisownData() {
+void DLRUCache::DisownData() {
   // Leak data only if that won't generate an ASAN/valgrind warning
   if (!kMustFreeHeapAllocations) {
     shards_ = nullptr;
@@ -624,15 +633,15 @@ void RMLRUCache::DisownData() {
   }
 }
 
-size_t RMLRUCache::TEST_GetRMLRUSize() {
-  size_t rm_lru_size_of_all_shards = 0;
+size_t DLRUCache::TEST_GetDLRUSize() {
+  size_t lm_lru_size_of_all_shards = 0;
   for (int i = 0; i < num_shards_; i++) {
-    rm_lru_size_of_all_shards += shards_[i].TEST_GetRMLRUSize();
+    lm_lru_size_of_all_shards += shards_[i].TEST_GetDLRUSize();
   }
-  return rm_lru_size_of_all_shards;
+  return lm_lru_size_of_all_shards;
 }
 
-double RMLRUCache::GetHighPriPoolRatio() {
+double DLRUCache::GetHighPriPoolRatio() {
   double result = 0.0;
   if (num_shards_ > 0) {
     result = shards_[0].GetHighPriPoolRatio();
@@ -640,11 +649,11 @@ double RMLRUCache::GetHighPriPoolRatio() {
   return result;
 }
 
-void RMLRUCache::WaitAll(std::vector<Handle*>& handles) {
+void DLRUCache::WaitAll(std::vector<Handle*>& handles) {
   // TODO: no implemented
 }
 
-std::shared_ptr<Cache> NewRMLRUCache(
+std::shared_ptr<Cache> NewDLRUCache(
     size_t capacity, int num_shard_bits, bool strict_capacity_limit,
     double high_pri_pool_ratio, double rm_ratio,
     std::shared_ptr<MemoryAllocator> memory_allocator, bool use_adaptive_mutex,
@@ -663,16 +672,17 @@ std::shared_ptr<Cache> NewRMLRUCache(
     // invalid rm_ratio
     return nullptr;
   }
-  return std::make_shared<RMLRUCache>(
-      capacity, num_shard_bits, strict_capacity_limit, high_pri_pool_ratio, rm_ratio,
-      std::move(memory_allocator), use_adaptive_mutex, metadata_charge_policy);
+  return std::make_shared<DLRUCache>(
+      capacity, num_shard_bits, strict_capacity_limit, high_pri_pool_ratio,
+      rm_ratio, std::move(memory_allocator), use_adaptive_mutex,
+      metadata_charge_policy);
 }
 
-std::shared_ptr<Cache> NewRMLRUCache(const RMLRUCacheOptions& cache_opts) {
-  return NewRMLRUCache(
+std::shared_ptr<Cache> NewDLRUCache(const DLRUCacheOptions& cache_opts) {
+  return NewDLRUCache(
       cache_opts.capacity, cache_opts.num_shard_bits,
-      cache_opts.strict_capacity_limit, cache_opts.high_pri_pool_ratio, cache_opts.rm_ratio,
-      cache_opts.memory_allocator, cache_opts.use_adaptive_mutex,
-      cache_opts.metadata_charge_policy);
+      cache_opts.strict_capacity_limit, cache_opts.high_pri_pool_ratio,
+      cache_opts.rm_ratio, cache_opts.memory_allocator,
+      cache_opts.use_adaptive_mutex, cache_opts.metadata_charge_policy);
 }
 }  // namespace ROCKSDB_NAMESPACE

@@ -10,7 +10,7 @@
 #include "rocksdb/cache.h"
 
 #include "cache/lru_cache.h"
-#include "cache/rm_lru_cache.h"
+#include "cache/d_lru_cache.h"
 #include "rocksdb/secondary_cache.h"
 #include "rocksdb/utilities/customizable_util.h"
 #include "rocksdb/utilities/options_type.h"
@@ -36,25 +36,25 @@ static std::unordered_map<std::string, OptionTypeInfo>
           OptionTypeFlags::kMutable}},
 };
 static std::unordered_map<std::string, OptionTypeInfo>
-    rm_lru_cache_options_type_info = {
+    d_lru_cache_options_type_info = {
         {"capacity",
-         {offsetof(struct RMLRUCacheOptions, capacity), OptionType::kSizeT,
+         {offsetof(struct DLRUCacheOptions, capacity), OptionType::kSizeT,
           OptionVerificationType::kNormal, OptionTypeFlags::kMutable}},
         {"num_shard_bits",
-         {offsetof(struct RMLRUCacheOptions, num_shard_bits), OptionType::kInt,
+         {offsetof(struct DLRUCacheOptions, num_shard_bits), OptionType::kInt,
           OptionVerificationType::kNormal, OptionTypeFlags::kMutable}},
         {"strict_capacity_limit",
-         {offsetof(struct RMLRUCacheOptions, strict_capacity_limit),
+         {offsetof(struct DLRUCacheOptions, strict_capacity_limit),
           OptionType::kBoolean, OptionVerificationType::kNormal,
           OptionTypeFlags::kMutable}},
         {"high_pri_pool_ratio",
-         {offsetof(struct RMLRUCacheOptions, high_pri_pool_ratio),
+         {offsetof(struct DLRUCacheOptions, high_pri_pool_ratio),
           OptionType::kDouble, OptionVerificationType::kNormal,
           OptionTypeFlags::kMutable}},
 };
 #endif  // ROCKSDB_LITE
 
-// TODO: CreateFromString for RMLRUCache?
+// TODO: CreateFromString for DLRUCache?
 
 Status SecondaryCache::CreateFromString(
     const ConfigOptions& config_options, const std::string& value,

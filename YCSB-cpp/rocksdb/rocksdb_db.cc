@@ -317,7 +317,7 @@ void RocksdbDB::GetOptions(const utils::Properties &props, rocksdb::Options *opt
                                                                PROP_TABLE_CACHE_NUMSHARDBITS_DEFAULT));
     printf("cache_size: %lu, table_cache_numshardbits: %d\n", cache_size, table_cache_numshardbits);
     if (cache_size > 0) {
-      block_cache = rocksdb::NewRMLRUCache(cache_size, table_cache_numshardbits, false, 0.5, /*rm_ratio=*/0.5);
+      block_cache = rocksdb::NewDLRUCache(cache_size, table_cache_numshardbits, false, 0.5, /*rm_ratio=*/0.5);
       // block_cache = rocksdb::NewLRUCache(cache_size, table_cache_numshardbits, false, 0.5);
       table_options.block_cache = block_cache;
     } else {

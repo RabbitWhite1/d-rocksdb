@@ -629,7 +629,7 @@ set(SOURCES
         cache/cache_reservation_manager.cc
         cache/clock_cache.cc
         cache/lru_cache.cc
-        cache/rm_lru_cache.cc
+        cache/d_lru_cache.cc
         cache/sharded_cache.cc
         cache/remote_memory/rdma_transport.cc
         cache/remote_memory/rdma_utils.cc

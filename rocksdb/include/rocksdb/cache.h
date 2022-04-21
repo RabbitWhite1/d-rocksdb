@@ -141,12 +141,12 @@ extern std::shared_ptr<Cache> NewClockCache(
     CacheMetadataChargePolicy metadata_charge_policy =
         kDefaultCacheMetadataChargePolicy);
 
-struct RMLRUCacheOptions {
+struct DLRUCacheOptions {
   // Capacity of the cache.
   size_t capacity = 0;
 
   // Cache is sharded into 2^num_shard_bits shards,
-  // by hash of key. Refer to NewRMLRUCache for further
+  // by hash of key. Refer to NewDLRUCache for further
   // information.
   int num_shard_bits = -1;
 
@@ -155,7 +155,7 @@ struct RMLRUCacheOptions {
   bool strict_capacity_limit = false;
 
   // Percentage of cache reserved for high priority entries.
-  // If greater than zero, the RMLRU list will be split into a high-pri
+  // If greater than zero, the DLRU list will be split into a high-pri
   // list and a low-pri list. High-pri entries will be inserted to the
   // tail of high-pri list, while low-pri entries will be first inserted to
   // the low-pri list (the midpoint). This is referred to as
@@ -190,8 +190,8 @@ struct RMLRUCacheOptions {
   // A SecondaryCache instance to use a the non-volatile tier
   std::shared_ptr<SecondaryCache> secondary_cache;
 
-  RMLRUCacheOptions() {}
-  RMLRUCacheOptions(size_t _capacity, int _num_shard_bits,
+  DLRUCacheOptions() {}
+  DLRUCacheOptions(size_t _capacity, int _num_shard_bits,
                   bool _strict_capacity_limit, double _high_pri_pool_ratio,
                   std::shared_ptr<MemoryAllocator> _memory_allocator = nullptr,
                   bool _use_adaptive_mutex = kDefaultToAdaptiveMutex,
@@ -214,7 +214,7 @@ struct RMLRUCacheOptions {
 // high_pri_pool_pct.
 // num_shard_bits = -1 means it is automatically determined: every shard
 // will be at least 512KB and number of shard bits will not exceed 6.
-extern std::shared_ptr<Cache> NewRMLRUCache(
+extern std::shared_ptr<Cache> NewDLRUCache(
     size_t capacity, int num_shard_bits = -1,
     bool strict_capacity_limit = false, double high_pri_pool_ratio = 0.5, double rm_ratio = 0.0,
     std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
@@ -222,7 +222,7 @@ extern std::shared_ptr<Cache> NewRMLRUCache(
     CacheMetadataChargePolicy metadata_charge_policy =
         kDefaultCacheMetadataChargePolicy);
 
-extern std::shared_ptr<Cache> NewRMLRUCache(const RMLRUCacheOptions& cache_opts);
+extern std::shared_ptr<Cache> NewDLRUCache(const DLRUCacheOptions& cache_opts);
 
 class Cache {
  public:

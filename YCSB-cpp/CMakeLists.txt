@@ -28,4 +28,4 @@ aux_source_directory(./core SOURCES)
 aux_source_directory(./rocksdb SOURCES)
 add_executable(ycsb ${SOURCES})
 
-target_link_libraries(ycsb ${LIB_ROCKSDB} tbb snappy z lz4 bz2 zstd dl pthread)
+target_link_libraries(ycsb ${LIB_ROCKSDB} rdmacm ibverbs tbb snappy z lz4 bz2 zstd dl pthread)
