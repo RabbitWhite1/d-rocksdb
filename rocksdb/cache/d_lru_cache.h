@@ -11,8 +11,8 @@
 #include <memory>
 #include <string>
 
-#include "cache/sharded_cache.h"
 #include "cache/remote_memory/rm.h"
+#include "cache/sharded_cache.h"
 #include "port/lang.h"
 #include "port/malloc.h"
 #include "port/port.h"
@@ -51,7 +51,8 @@ namespace ROCKSDB_NAMESPACE {
 // (to move into state 3).
 
 struct DLRUHandle {
-  // `value` points to the real data if `IsLocal`, otherwise, it is an `uint64_t` remote addr
+  // `value` points to the real data if `IsLocal`, otherwise, it is an
+  // `uint64_t` remote addr
   void* value;
   union Info {
     Info() {}
@@ -64,7 +65,8 @@ struct DLRUHandle {
   DLRUHandle* next_hash;
   DLRUHandle* next;
   DLRUHandle* prev;
-  size_t charge;  // TODO(opt): Only allow uint32_t?
+  size_t charge;      // TODO(opt): Only allow uint32_t?
+  size_t slice_size;  // Only for remote memory
   size_t key_length;
   // The hash of key(). Used for fast sharding and comparisons.
   uint32_t hash;
@@ -194,7 +196,7 @@ struct DLRUHandle {
     }
   }
 
-  void Free() {
+  void FreeValue() {
     assert(refs == 0);
 #ifdef __SANITIZE_THREAD__
     // Here we can safely assert they are the same without a data race reported
@@ -208,6 +210,10 @@ struct DLRUHandle {
         (*info_.helper->del_cb)(key(), value);
       }
     }
+  }
+
+  void Free() {
+    FreeValue();
     delete[] reinterpret_cast<char*>(this);
   }
 
@@ -286,10 +292,11 @@ class DLRUHandleTable {
 class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
  public:
   DLRUCacheShard(size_t capacity, bool strict_capacity_limit,
-                double high_pri_pool_ratio, double rm_ratio, bool use_adaptive_mutex,
-                CacheMetadataChargePolicy metadata_charge_policy,
-                int max_upper_hash_bits,
-                const std::shared_ptr<RemoteMemory>& remote_memory);
+                 double high_pri_pool_ratio, double rm_ratio,
+                 bool use_adaptive_mutex,
+                 CacheMetadataChargePolicy metadata_charge_policy,
+                 int max_upper_hash_bits,
+                 const std::shared_ptr<RemoteMemory>& remote_memory);
   virtual ~DLRUCacheShard() override = default;
 
   // Separate from constructor so caller can easily make an array of DLRUCache
@@ -395,8 +402,14 @@ class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
   // to hold (usage_ + charge) is freed or the rm_lru list is empty
   // This function is not thread safe - it needs to be executed while
   // holding the mutex_
-  void EvictFromLMLRU(size_t charge, autovector<DLRUHandle*>* deleted);
+  void EvictFromLMLRU(size_t charge,
+                      autovector<DLRUHandle*>* evicted_to_rm_list);
+  void EvictFromLMLRUToRMLRU(size_t charge,
+                             autovector<DLRUHandle*>* evicted_to_rm_list);
   void EvictFromRMLRU(size_t charge, autovector<DLRUHandle*>* deleted);
+  void MoveValueToRM(DLRUHandle* handle);
+  void FetchFromRM(DLRUHandle* e,
+                   const ShardedCache::CreateCallback& create_cb);
 
   // Initialized before use.
   size_t capacity_;
@@ -427,25 +440,29 @@ class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
   // lm_lru.prev is newest entry, lm_lru.next is oldest entry.
   // lm LRU contains items which can be evicted, ie reference only by cache
   /*
-   *             [                 low pri pool     ]     [ high pri pool            ]           
-   *  (oldest)    ... --> ... --> ... --> ... --> ... --> ... --> ... --> ... --> ... --> rm_lru     (newest)
-   *              ^^^                             ^^^                             ^^^
-   *          rm_lru.next                      lm_lru_low_pri                  rm_lru.prev
-   * 
+   *             [                 low pri pool     ]     [ high pri pool ]
+   *  (oldest)    ... --> ... --> ... --> ... --> ... --> ... --> ... --> ...
+   * --> ... --> rm_lru     (newest)
+   *              ^^^                             ^^^ ^^^ rm_lru.next
+   * lm_lru_low_pri                  rm_lru.prev
+   *
    *
    * Insert to low pri:
-   *             [                 low pri pool                            ]     [ high pri pool            ]           
-   *  (oldest)    ... --> ... --> ... --> ... -->   (inserted)   -->     ... --> ... --> ... --> ... --> ... --> rm_lru     (newest)
-   *              ^^^                                                    ^^^                             ^^^
-   *          rm_lru.next                                             lm_lru_low_pri                  rm_lru.prev
-   * 
+   *             [                 low pri pool                            ] [
+   * high pri pool            ] (oldest)    ... --> ... --> ... --> ... -->
+   * (inserted)   -->     ... --> ... --> ... --> ... --> ... --> rm_lru
+   * (newest)
+   *              ^^^                                                    ^^^ ^^^
+   *          rm_lru.next lm_lru_low_pri                  rm_lru.prev
+   *
    *
    * Insert to high pri:
-   *             [                 low pri pool     ]     [ high pri pool            ]           
-   *  (oldest)    ... --> ... --> ... --> ... --> ... --> ... --> ... --> ... --> ... -->   (inserted)   -->   rm_lru     (newest)
-   *              ^^^                             ^^^                             ^^^
-   *          rm_lru.next                      lm_lru_low_pri                  rm_lru.prev
-   * 
+   *             [                 low pri pool     ]     [ high pri pool ]
+   *  (oldest)    ... --> ... --> ... --> ... --> ... --> ... --> ... --> ...
+   * --> ... -->   (inserted)   -->   rm_lru     (newest)
+   *              ^^^                             ^^^ ^^^ rm_lru.next
+   * lm_lru_low_pri                  rm_lru.prev
+   *
    *
    */
   DLRUHandle lm_lru_;
@@ -495,11 +512,11 @@ class DLRUCache
     : public ShardedCache {
  public:
   DLRUCache(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
-           double high_pri_pool_ratio, double rm_ratio,
-           std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
-           bool use_adaptive_mutex = kDefaultToAdaptiveMutex,
-           CacheMetadataChargePolicy metadata_charge_policy =
-               kDontChargeCacheMetadata);
+            double high_pri_pool_ratio, double rm_ratio,
+            std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
+            bool use_adaptive_mutex = kDefaultToAdaptiveMutex,
+            CacheMetadataChargePolicy metadata_charge_policy =
+                kDontChargeCacheMetadata);
   virtual ~DLRUCache();
   virtual const char* Name() const override { return "DLRUCache"; }
   virtual CacheShard* GetShard(uint32_t shard) override;

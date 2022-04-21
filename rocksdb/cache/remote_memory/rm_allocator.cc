@@ -56,12 +56,13 @@ RemoteMemoryAllocator::split_and_use_region(RMRegion *region,
 uint64_t RemoteMemoryAllocator::rmalloc(size_t size) {
   uint64_t allocated_addr = -1;
   RMRegion *free_region = nullptr;
+  size_t free_region_size = 0;
 
   std::lock_guard<std::mutex> lock(mutex_);
   {
     free_region = free_head_;
     while (free_region != nullptr) {
-      if (size < free_region->size) {
+      if (size < (free_region_size = free_region->size)) {
         allocated_addr = free_region->addr;
         RMRegion *new_free_region = split_and_use_region(free_region, size);
         if (free_region == free_head_) {
@@ -86,7 +87,7 @@ uint64_t RemoteMemoryAllocator::rmalloc(size_t size) {
     }
     printf("[%-16s] allocated (addr=0x%lx, size=0x%lx) from region(0x%lx, "
            "0x%lx)\n",
-           "Info", allocated_addr, size, free_region->addr, free_region->size);
+           "Info", allocated_addr, size, free_region->addr, free_region_size);
     assert(allocated_addr == free_region->addr && size == free_region->size);
     addr_to_region_.insert({allocated_addr, free_region});
   }

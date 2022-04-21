@@ -14,7 +14,7 @@
 - [ ] 5. implement the remote memory logic for LRUCache.
   - [x] LRUHandle. modify its fields to support below operations
   - [x] rm_lru. implement rm_lru related methods (the simplest lru)
-  - [ ] eviction. 
-    - [ ] evict local block to remote if exceeding local memory
-    - [ ] evict remtote block if exceeding total memory
-  - [ ] fetch if remote
+  - [buggy] eviction. 
+    - [buggy] evict local block to remote if exceeding local memory
+    - [buggy] evict remtote block if exceeding total memory
+  - [buggy] fetch if remote

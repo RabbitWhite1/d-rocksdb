@@ -301,27 +301,71 @@ void DLRUCacheShard::MaintainPoolSize() {
 
 void DLRUCacheShard::EvictFromLMLRU(size_t charge,
                                     autovector<DLRUHandle*>* deleted) {
-  while ((lm_lru_usage_ + charge) > lm_capacity_ && lm_lru_.next != &lm_lru_) {
+  while ((usage_ + charge) > capacity_ && lm_lru_.next != &lm_lru_) {
     DLRUHandle* old = lm_lru_.next;
-    // DLRU list contains only elements which can be evicted
+    // LRU list contains only elements which can be evicted
     assert(old->InCache() && !old->HasRefs());
     LMLRU_Remove(old);
     table_.Remove(old->key(), old->hash);
     old->SetInCache(false);
     size_t old_total_charge = old->CalcTotalCharge(metadata_charge_policy_);
-    // evicting from local to remote, so usage didn't change,
-    // only when evicting from remote, total usage changes (see EvictFromRMLRU)
+    assert(usage_ >= old_total_charge);
+    usage_ -= old_total_charge;
     deleted->push_back(old);
   }
 }
 
+void DLRUCacheShard::EvictFromLMLRUToRMLRU(
+    size_t charge, autovector<DLRUHandle*>* evicted_to_rm_list) {
+  while ((lm_lru_usage_ + charge) > lm_capacity_ && lm_lru_.next != &lm_lru_) {
+    DLRUHandle* old = lm_lru_.next;
+    // DLRU list contains only elements which can be evicted
+    assert(old->InCache() && !old->HasRefs());
+    LMLRU_Remove(old);
+    RMLRU_Insert(old);
+    // size_t old_total_charge = old->CalcTotalCharge(metadata_charge_policy_);
+    // evicting from local to remote, so usage didn't change,
+    // only when evicting from remote, total usage changes (see EvictFromRMLRU)
+    evicted_to_rm_list->push_back(old);
+  }
+}
+
+void DLRUCacheShard::MoveValueToRM(DLRUHandle* e) {
+  assert(e->InCache());
+  assert(e->IsLocal());
+  assert(remote_memory_);
+  assert(e->info_.helper && "if using rm, should use helper with size_cb");
+  e->slice_size = e->info_.helper->size_cb(e->value);
+  printf("charging rm: %lu\n", e->slice_size);
+  uint64_t rm_addr = remote_memory_->rmalloc(e->slice_size);
+  remote_memory_->write(rm_addr, e->value, e->slice_size);
+  e->value = (void*)rm_addr;
+  e->FreeValue();
+}
+
+void DLRUCacheShard::FetchFromRM(
+    DLRUHandle* e, const ShardedCache::CreateCallback& create_cb) {
+  assert(e->InCache());
+  assert(!e->IsLocal());
+  assert(remote_memory_);
+  assert(e->info_.helper && "if using rm, should use helper with size_cb");
+  e->slice_size = e->info_.helper->size_cb(e->value);
+  uint64_t rm_addr = (uint64_t)e->value;
+  std::unique_ptr<char[]> buf_data(new char[e->slice_size]());
+  remote_memory_->read(rm_addr, buf_data.get(), e->slice_size);
+  Status s = create_cb(buf_data.get(), e->slice_size, &e->value, &e->charge);
+  assert(s.ok());
+}
+
 void DLRUCacheShard::EvictFromRMLRU(size_t charge,
                                     autovector<DLRUHandle*>* deleted) {
+  // TODO: don't need consider charge, because new block is inserted to lm_lru.
+  // will remove later.
   while ((rm_lru_usage_ + charge) > rm_capacity_ && rm_lru_.next != &rm_lru_) {
     DLRUHandle* old = rm_lru_.next;
     // DLRU list contains only elements which can be evicted
     assert(old->InCache() && !old->HasRefs());
-    LMLRU_Remove(old);
+    RMLRU_Remove(old);
     table_.Remove(old->key(), old->hash);
     old->SetInCache(false);
     size_t old_total_charge = old->CalcTotalCharge(metadata_charge_policy_);
@@ -338,7 +382,7 @@ void DLRUCacheShard::SetCapacity(size_t capacity) {
     MutexLock l(&mutex_);
     capacity_ = capacity;
     high_pri_pool_capacity_ = capacity_ * high_pri_pool_ratio_;
-    lm_capacity_ = capacity * (1 - rm_ratio_);
+    lm_capacity_ = capacity_ * (1 - rm_ratio_);
     rm_capacity_ = capacity_ * rm_ratio_;
     EvictFromLMLRU(0, &last_reference_list);
   }
@@ -359,15 +403,22 @@ void DLRUCacheShard::SetStrictCapacityLimit(bool strict_capacity_limit) {
 Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
                                   bool free_handle_on_fail) {
   Status s = Status::OK();
+  autovector<DLRUHandle*> evict_to_rm_list;
   autovector<DLRUHandle*> last_reference_list;
   size_t total_charge = e->CalcTotalCharge(metadata_charge_policy_);
+  // printf("cache charge size=%lu\n", total_charge);
 
   {
     MutexLock l(&mutex_);
 
     // Free the space following strict DLRU policy until enough space
     // is freed or the rm_lru list is empty
-    EvictFromLMLRU(total_charge, &last_reference_list);
+    if (remote_memory_) {
+      EvictFromLMLRUToRMLRU(total_charge, &evict_to_rm_list);
+      EvictFromRMLRU(total_charge, &last_reference_list);
+    } else {
+      EvictFromLMLRU(total_charge, &last_reference_list);
+    }
 
     if ((usage_ + total_charge) > capacity_ &&
         (strict_capacity_limit_ || handle == nullptr)) {
@@ -416,8 +467,10 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
 
   // Try to insert the evicted entries into the secondary cache
   // Free the entries here outside of mutex for performance reasons
+  for (auto entry : evict_to_rm_list) {
+    MoveValueToRM(entry);
+  }
   for (auto entry : last_reference_list) {
-    // TODO: maybe evict to remote memory
     entry->Free();
   }
 
@@ -444,6 +497,10 @@ Cache::Handle* DLRUCacheShard::Lookup(
         // The entry is in DLRU since it's in hash and has no external
         // references
         LMLRU_Remove(e);
+      }
+      if (!e->IsLocal()) {
+        // fetch it from remote memory
+        FetchFromRM(e, create_cb);
       }
       e->Ref();
       e->SetHit();
@@ -537,11 +594,13 @@ Status DLRUCacheShard::Insert(const Slice& key, uint32_t hash, void* value,
     e->info_.deleter = deleter;
   }
   e->charge = charge;
+  e->slice_size = 0;
   e->key_length = key.size();
   e->hash = hash;
   e->refs = 0;
   e->next = e->prev = nullptr;
   e->SetInCache(true);
+  e->SetLocal(true);
   e->SetPriority(priority);
   memcpy(e->key_data, key.data(), key.size());
 
