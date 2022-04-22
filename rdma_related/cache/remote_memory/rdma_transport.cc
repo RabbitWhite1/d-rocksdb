@@ -164,7 +164,7 @@ int rdma::Transport::init_resources(struct rdma_addrinfo *rai) {
     int mr_flags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE |
                    IBV_ACCESS_REMOTE_READ;
     ctx_->buf_mr =
-        ibv_reg_mr(ctx_->srq_id->pd, ctx_->buf, ctx_->msg_length, mr_flags);
+        ibv_reg_mr(ctx_->srq_id->pd, ctx_->buf, ctx_->local_buf_size, mr_flags);
     if (!ctx_->buf_mr) {
       VERB_ERR("rdma_reg_msgs buf_mr", -1);
       return -1;
@@ -455,6 +455,7 @@ int rdma::Transport::handle_connect_request(struct rdma_cm_event *cm_event) {
 
   // allocate remote memory
   ctx_->buf = (char *)malloc(ctx_->rm_size);
+  memset(ctx_->buf, 0, ctx_->rm_size);
   int mr_flags =
       IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ;
   ctx_->buf_mr =

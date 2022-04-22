@@ -339,8 +339,8 @@ void DLRUCacheShard::MoveValueToRM(DLRUHandle* e) {
   printf("charging rm: %lu\n", e->slice_size);
   uint64_t rm_addr = remote_memory_->rmalloc(e->slice_size);
   remote_memory_->write(rm_addr, e->value, e->slice_size);
-  e->value = (void*)rm_addr;
   e->FreeValue();
+  e->value = (void*)rm_addr;
 }
 
 void DLRUCacheShard::FetchFromRM(
