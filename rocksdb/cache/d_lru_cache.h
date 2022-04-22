@@ -84,7 +84,8 @@ struct DLRUHandle {
     HAS_HIT = (1 << 3),
     // Can this be inserted into the secondary cache
     IS_SECONDARY_CACHE_COMPATIBLE = (1 << 4),
-    // Is the handle still being read from a lower tier
+    // Representing a state that the entry value is in local but already in rm_lru.
+    // only set to true when `EvictFromLMLRUToRMLRU`
     IS_PENDING = (1 << 5),
     // Has the item been promoted from a lower tier
     IS_PROMOTED = (1 << 6),
@@ -188,6 +189,14 @@ struct DLRUHandle {
     }
   }
 
+  void SetPending(bool is_pending) {
+    if (is_pending) {
+      flags |= IS_PENDING;
+    } else {
+      flags &= ~IS_PENDING;
+    }
+  }
+
   void SetLocal(bool is_local) {
     if (is_local) {
       flags |= IS_LOCAL;
@@ -213,7 +222,8 @@ struct DLRUHandle {
   }
 
   void Free() {
-    FreeValue();
+    // FreeValue();
+    assert(IsLocal() == false);
     delete[] reinterpret_cast<char*>(this);
   }
 
