@@ -357,6 +357,7 @@ void DLRUCacheShard::FetchFromRM(
   remote_memory_->read(rm_addr, buf_data.get(), e->slice_size);
   Status s = create_cb(buf_data.get(), e->slice_size, &e->value, &e->charge);
   assert(s.ok());
+  e->SetLocal(true);
 }
 
 void DLRUCacheShard::EvictFromRMLRU(size_t charge,
@@ -479,11 +480,6 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
   return s;
 }
 
-void DLRUCacheShard::Promote(DLRUHandle* e) {
-  // TODO: check whether need this
-  printf("should not call this\n");
-}
-
 Cache::Handle* DLRUCacheShard::Lookup(
     const Slice& key, uint32_t hash,
     const ShardedCache::CacheItemHelper* helper,
@@ -495,14 +491,16 @@ Cache::Handle* DLRUCacheShard::Lookup(
     e = table_.Lookup(key, hash);
     if (e != nullptr) {
       assert(e->InCache());
-      if (!e->HasRefs()) {
-        // The entry is in DLRU since it's in hash and has no external
-        // references
+      if (e->IsLocal() && !e->HasRefs()) {
+        // The entry is in LMLRU since it's in hash, in local and has no 
+        // references external
         LMLRU_Remove(e);
       }
       if (!e->IsLocal()) {
         // fetch it from remote memory
         FetchFromRM(e, create_cb);
+        // The entry is in RMLRU since it's in hash and in remote memory
+        RMLRU_Remove(e);
       }
       e->Ref();
       e->SetHit();
