@@ -29,3 +29,6 @@ target_link_libraries(rdma_transport_test ${LIB_IBVERBS} ${LIB_RDMACM})
 
 add_executable(rm_test rm_test.cc ${SOURCES})
 target_link_libraries(rm_test ${LIB_IBVERBS} ${LIB_RDMACM})
+
+add_executable(rm_allocator_test rm_allocator_test.cc ${SOURCES})
+target_link_libraries(rm_allocator_test ${LIB_IBVERBS} ${LIB_RDMACM})

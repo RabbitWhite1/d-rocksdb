@@ -1,6 +1,6 @@
 #include "rm.h"
-#include <iostream>
 
+#include <iostream>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -14,7 +14,9 @@ RemoteMemory::RemoteMemory(std::string server_name, const size_t size) {
 }
 
 uint64_t RemoteMemory::rmalloc(size_t size) {
-  return allocator_->rmalloc(size);
+  allocator_->print();
+  uint64_t ret = allocator_->rmalloc(size);
+  return ret;
 }
 
 RemoteMemory::~RemoteMemory() {
@@ -22,14 +24,17 @@ RemoteMemory::~RemoteMemory() {
   delete transport_;
 }
 
-void RemoteMemory::rmfree(uint64_t addr) { return allocator_->rmfree(addr); }
+void RemoteMemory::rmfree(uint64_t addr) {
+  allocator_->print();
+  allocator_->rmfree(addr);
+}
 
 int RemoteMemory::read(uint64_t rm_addr, void *buf, size_t size) {
   // TODO: decide which conn_id to use
   // TODO: check whether size is valid
   const rdma::Context *ctx = transport_->get_context();
-  int ret = transport_->read_rm(ctx->conn_ids[0], ctx->buf, size,
-                                ctx->buf_mr, rm_addr, ctx->rm_rkey);
+  int ret = transport_->read_rm(ctx->conn_ids[0], ctx->buf, size, ctx->buf_mr,
+                                rm_addr, ctx->rm_rkey);
   // TODO: is it possible to omit this copy?
   memcpy(buf, ctx->buf, size);
   return ret;
@@ -40,8 +45,8 @@ int RemoteMemory::write(uint64_t rm_addr, void *buf, size_t size) {
   const rdma::Context *ctx = transport_->get_context();
   // TODO: is it possible to omit this copy?
   memcpy(ctx->buf, buf, size);
-  int ret = transport_->write_rm(ctx->conn_ids[0], ctx->buf, size,
-                                 ctx->buf_mr, rm_addr, ctx->rm_rkey);
+  int ret = transport_->write_rm(ctx->conn_ids[0], ctx->buf, size, ctx->buf_mr,
+                                 rm_addr, ctx->rm_rkey);
   return ret;
 }
 

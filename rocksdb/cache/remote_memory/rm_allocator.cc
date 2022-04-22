@@ -79,7 +79,7 @@ uint64_t RemoteMemoryAllocator::rmalloc(size_t size) {
         free_region->prev_free = nullptr;
         break;
       }
-      free_region = free_region->next;
+      free_region = free_region->next_free;
     }
     if (free_region == nullptr) {
       printf("NOSPACE\n");
@@ -121,10 +121,11 @@ RMRegion *RemoteMemoryAllocator::prepend_free(RMRegion *region) {
   return region;
 }
 
-void RemoteMemoryAllocator::rmfree(uint64_t addr) {
+size_t RemoteMemoryAllocator::rmfree(uint64_t addr) {
   printf("[%-16s] free 0x%lx\n", "Info", addr);
   std::lock_guard<std::mutex> lock(mutex_);
   RMRegion *region = addr_to_region_.at(addr);
+  size_t size_to_free = region->size;
   // try to merge prev region if free
   if (region->prev != nullptr and region->prev->is_free) {
     RMRegion *prev = region->prev;
@@ -151,7 +152,24 @@ void RemoteMemoryAllocator::rmfree(uint64_t addr) {
   region->is_free = true;
 
   prepend_free(region);
-  addr_to_region_.erase(addr);
+  size_t num_removed = addr_to_region_.erase(addr);
+  assert(num_removed == 1);
+
+  return size_to_free;
+}
+
+void RemoteMemoryAllocator::print_size_info() {
+  size_t total_size = 0;
+  size_t free_size = 0;
+  RMRegion *region = head_;
+  while (region != nullptr) {
+    if (region->is_free) {
+      free_size += region->size;
+    }
+    total_size += region->size;
+    region = region->next;
+  }
+  printf("free_size/total_size=%lu/%lu\n", free_size, total_size);
 }
 
 void RemoteMemoryAllocator::print() {

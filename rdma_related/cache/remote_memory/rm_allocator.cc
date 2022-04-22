@@ -78,7 +78,7 @@ uint64_t RemoteMemoryAllocator::rmalloc(size_t size) {
         free_region->prev_free = nullptr;
         break;
       }
-      free_region = free_region->next;
+      free_region = free_region->next_free;
     }
     if (free_region == nullptr) {
       printf("NOSPACE\n");

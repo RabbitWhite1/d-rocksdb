@@ -11,14 +11,7 @@ int main(int argc, char **argv) {
   if (argc > 1) {
     rocksdb::RemoteMemoryServer rm_server(server_name);
   } else {
-    rocksdb::RemoteMemory rm(server_name, 536870912);
-    uint64_t addr = rm.rmalloc(N);
-    char buf_write[N];
-    memset(buf_write, 'a', N);
-    rm.write(addr, buf_write, N);
-    char buf_read[N];
-    rm.read(addr, buf_read, N);
-    printf("%s\n", rdma::char_array_to_string(buf_read, N).c_str());
-    rm.rmfree(addr);
+    rocksdb::RemoteMemory rm(server_name, 0x20000);
+    rm.rmalloc(0xf9d);
   }
 }
