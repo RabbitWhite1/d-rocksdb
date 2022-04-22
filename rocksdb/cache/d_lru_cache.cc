@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstdio>
 
+#include "table/block_based/block.h"
 #include "monitoring/perf_context_imp.h"
 #include "monitoring/statistics.h"
 #include "port/lang.h"
@@ -335,12 +336,15 @@ void DLRUCacheShard::MoveValueToRM(DLRUHandle* e) {
   assert(e->IsLocal());
   assert(remote_memory_);
   assert(e->info_.helper && "if using rm, should use helper with size_cb");
-  e->slice_size = e->info_.helper->size_cb(e->value);
+  // e->slice_size = e->info_.helper->size_cb(e->value);
+  e->slice_size = reinterpret_cast<Block*>(e->value)->size();
   printf("charging rm: %lu\n", e->slice_size);
   uint64_t rm_addr = remote_memory_->rmalloc(e->slice_size);
-  remote_memory_->write(rm_addr, e->value, e->slice_size);
+  // TODO: the `reinterpret_cast` is walkaroung. should use helper function.
+  remote_memory_->write(rm_addr, (void *)(reinterpret_cast<Block*>(e->value)->data()), e->slice_size);
   e->FreeValue();
   e->value = (void*)rm_addr;
+  e->SetLocal(false);
 }
 
 void DLRUCacheShard::FetchFromRM(
@@ -348,8 +352,6 @@ void DLRUCacheShard::FetchFromRM(
   assert(e->InCache());
   assert(!e->IsLocal());
   assert(remote_memory_);
-  assert(e->info_.helper && "if using rm, should use helper with size_cb");
-  e->slice_size = e->info_.helper->size_cb(e->value);
   uint64_t rm_addr = (uint64_t)e->value;
   std::unique_ptr<char[]> buf_data(new char[e->slice_size]());
   remote_memory_->read(rm_addr, buf_data.get(), e->slice_size);
