@@ -30,6 +30,10 @@ int RemoteMemory::read(uint64_t rm_addr, void *buf, size_t size) {
   const rdma::Context *ctx = transport_->get_context();
   int ret = transport_->read_rm(ctx->conn_ids[0], ctx->buf, size,
                                 ctx->buf_mr, rm_addr, ctx->rm_rkey);
+  if (ret) {
+    allocator_->print();
+    throw "read from remote memory failed";
+  }
   // TODO: is it possible to omit this copy?
   memcpy(buf, ctx->buf, size);
   return ret;
@@ -42,6 +46,10 @@ int RemoteMemory::write(uint64_t rm_addr, void *buf, size_t size) {
   memcpy(ctx->buf, buf, size);
   int ret = transport_->write_rm(ctx->conn_ids[0], ctx->buf, size,
                                  ctx->buf_mr, rm_addr, ctx->rm_rkey);
+  if (ret) {
+    allocator_->print();
+    throw "write to remote memory failed";
+  }
   return ret;
 }
 
