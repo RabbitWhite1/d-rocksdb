@@ -193,7 +193,7 @@ if __name__ == '__main__':
         
         workload = 'c'
         operationcount = 20000000
-        cache_size = 128*1024**1
+        cache_size = 256*1024**1
         min_write_buffer_number_to_merge = max_write_buffer_number - 2
         write_buffer_size = 256*1024**2
         recordcount = 1048576

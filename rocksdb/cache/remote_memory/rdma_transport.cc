@@ -535,8 +535,8 @@ int rdma::Transport::read_rm(rdma_cm_id *cm_id, char *lm_addr, size_t lm_length,
     VERB_ERR("rdma_post_read", ret);
     return ret;
   }
-  printf("[%-16s] post read:  rkey=0x%x, rm_addr=0x%lx, length=%lu\n", "Info",
-         rm_rkey, rm_addr, lm_length);
+  // printf("[%-16s] post read:  rkey=0x%x, rm_addr=0x%lx, length=%lu\n", "Info",
+  //        rm_rkey, rm_addr, lm_length);
 
   do {
     ne = ibv_poll_cq(cm_id->send_cq, 1, &wc);
@@ -550,9 +550,6 @@ int rdma::Transport::read_rm(rdma_cm_id *cm_id, char *lm_addr, size_t lm_length,
       return wc.status;
     }
   } while (ne == 0);
-
-  printf("read from server: %s\n",
-         rdma::char_array_to_string(lm_addr, lm_length).c_str());
 
   return 0;
 }
@@ -573,8 +570,8 @@ int rdma::Transport::write_rm(rdma_cm_id *cm_id, char *lm_addr,
     VERB_ERR("rdma_post_write", ret);
     return ret;
   }
-  printf("[%-16s] post write: rkey=0x%x, rm_addr=0x%lx, length=%lu\n", "Info",
-         rm_rkey, rm_addr, lm_length);
+  // printf("[%-16s] post write: rkey=0x%x, rm_addr=0x%lx, length=%lu\n", "Info",
+  //        rm_rkey, rm_addr, lm_length);
 
   do {
     ne = ibv_poll_cq(cm_id->send_cq, 1, &wc);
@@ -588,9 +585,6 @@ int rdma::Transport::write_rm(rdma_cm_id *cm_id, char *lm_addr,
       return wc.status;
     }
   } while (ne == 0);
-
-  printf("write to server: %s\n",
-         rdma::char_array_to_string(lm_addr, lm_length).c_str());
 
   return 0;
 }

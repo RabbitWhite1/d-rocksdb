@@ -23,9 +23,9 @@ struct RMRegion {
 
   void print() {
     if (is_free) {
-      printf("{[0x%lx, 0x%lx), 0x%lx, free}", addr, addr + size, size);
+      printf("{[0x%lx, 0x%lx), 0x%lu, free}", addr, addr + size, size);
     } else {
-      printf("{[0x%lx, 0x%lx), 0x%lx, used}", addr, addr + size, size);
+      printf("{[0x%lx, 0x%lx), 0x%lu, used}", addr, addr + size, size);
     }
   }
 };
@@ -55,7 +55,8 @@ class RemoteMemoryAllocator {
   ~RemoteMemoryAllocator();
 
   uint64_t rmalloc(size_t size);
-  void rmfree(uint64_t addr);
-  void print();
+  size_t rmfree(uint64_t addr);
+  void print_size_info();
+  void print(bool only_free = false);
 };
 }  // namespace ROCKSDB_NAMESPACE

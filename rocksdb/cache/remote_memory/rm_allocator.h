@@ -57,6 +57,6 @@ class RemoteMemoryAllocator {
   uint64_t rmalloc(size_t size);
   size_t rmfree(uint64_t addr);
   void print_size_info();
-  void print();
+  void print(bool only_free = false);
 };
 }  // namespace ROCKSDB_NAMESPACE

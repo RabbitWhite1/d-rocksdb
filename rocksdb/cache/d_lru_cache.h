@@ -84,9 +84,8 @@ struct DLRUHandle {
     HAS_HIT = (1 << 3),
     // Can this be inserted into the secondary cache
     IS_SECONDARY_CACHE_COMPATIBLE = (1 << 4),
-    // Representing a state that the entry value is in local but already in rm_lru.
-    // only set to true when `EvictFromLMLRUToRMLRU`
-    IS_PENDING = (1 << 5),
+    // Is evicting to RM
+    IS_EVICTING_TO_RM = (1 << 5),
     // Has the item been promoted from a lower tier
     IS_PROMOTED = (1 << 6),
     // Is the data of the handle in local
@@ -132,7 +131,7 @@ struct DLRUHandle {
     return flags & IS_SECONDARY_CACHE_COMPATIBLE;
 #endif  // __SANITIZE_THREAD__
   }
-  bool IsPending() const { return flags & IS_PENDING; }
+  bool IsEvictingToRM() const { return flags & IS_EVICTING_TO_RM; }
   bool IsPromoted() const { return flags & IS_PROMOTED; }
   bool IsLocal() const { return flags & IS_LOCAL; }
 
@@ -173,14 +172,6 @@ struct DLRUHandle {
 #endif  // __SANITIZE_THREAD__
   }
 
-  void SetIncomplete(bool incomp) {
-    if (incomp) {
-      flags |= IS_PENDING;
-    } else {
-      flags &= ~IS_PENDING;
-    }
-  }
-
   void SetPromoted(bool promoted) {
     if (promoted) {
       flags |= IS_PROMOTED;
@@ -189,11 +180,11 @@ struct DLRUHandle {
     }
   }
 
-  void SetPending(bool is_pending) {
-    if (is_pending) {
-      flags |= IS_PENDING;
+  void SetEvictingToRM(bool is_evicting_to_rm) {
+    if (is_evicting_to_rm) {
+      flags |= IS_EVICTING_TO_RM;
     } else {
-      flags &= ~IS_PENDING;
+      flags &= ~IS_EVICTING_TO_RM;
     }
   }
 
@@ -223,7 +214,6 @@ struct DLRUHandle {
 
   void Free() {
     // FreeValue();
-    assert(IsLocal() == false);
     delete[] reinterpret_cast<char*>(this);
   }
 
@@ -418,8 +408,8 @@ class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
                              autovector<DLRUHandle*>* evicted_to_rm_list);
   void EvictFromRMLRU(size_t charge, autovector<DLRUHandle*>* deleted);
   void MoveValueToRM(DLRUHandle* handle);
-  void FetchFromRM(DLRUHandle* e,
-                   const ShardedCache::CreateCallback& create_cb);
+  void FetchValueFromRM(DLRUHandle* e,
+                        const ShardedCache::CreateCallback& create_cb);
 
   // Initialized before use.
   size_t capacity_;

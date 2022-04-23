@@ -324,7 +324,7 @@ void DLRUCacheShard::EvictFromLMLRUToRMLRU(
     assert(old->InCache() && !old->HasRefs());
     LMLRU_Remove(old);
     RMLRU_Insert(old);
-    old->SetPending(true);
+    old->SetEvictingToRM(true);
     // size_t old_total_charge = old->CalcTotalCharge(metadata_charge_policy_);
     // evicting from local to remote, so usage didn't change,
     // only when evicting from remote, total usage changes (see EvictFromRMLRU)
@@ -339,7 +339,6 @@ void DLRUCacheShard::MoveValueToRM(DLRUHandle* e) {
   assert(e->info_.helper && "if using rm, should use helper with size_cb");
   // e->slice_size = e->info_.helper->size_cb(e->value);
   e->slice_size = reinterpret_cast<Block*>(e->value)->size();
-  printf("charging rm: %lu\n", e->slice_size);
   uint64_t rm_addr = remote_memory_->rmalloc(e->slice_size);
   assert(rm_addr > 0 && "should be able to allocate enough memory");
   // TODO: the `reinterpret_cast` is walkaroung. should use helper function.
@@ -348,27 +347,21 @@ void DLRUCacheShard::MoveValueToRM(DLRUHandle* e) {
                         e->slice_size);
   e->FreeValue();
   e->value = (void*)rm_addr;
-  e->SetLocal(false);
-  e->SetPending(false);
 }
 
-void DLRUCacheShard::FetchFromRM(
+void DLRUCacheShard::FetchValueFromRM(
     DLRUHandle* e, const ShardedCache::CreateCallback& create_cb) {
   assert(e->InCache());
   assert(!e->IsLocal());
   assert(remote_memory_);
   uint64_t rm_addr = (uint64_t)e->value;
   std::unique_ptr<char[]> buf_data(new char[e->slice_size]());
-  printf("reading from addr=0x%lx, size=%lu\n", rm_addr, e->slice_size);
+  // printf("reading from addr=0x%lx, size=%lu\n", rm_addr, e->slice_size);
   remote_memory_->read(rm_addr, buf_data.get(), e->slice_size);
   Status s = create_cb(buf_data.get(), e->slice_size, &e->value, &e->charge);
   assert(s.ok());
   remote_memory_->rmfree(rm_addr);
-  printf("free handle(&=%p, rm_addr=%lx)\n", e, rm_addr);
-  e->value = nullptr;
-  e->slice_size = 0;
-  e->SetLocal(true);
-  printf("handle(&=%p, IsLocal=%d)\n", e, e->IsLocal());
+  // printf("free handle(&=%p, rm_addr=%lx, IsLocal=%d)\n", e, rm_addr, e->IsLocal());
 }
 
 void DLRUCacheShard::EvictFromRMLRU(size_t charge,
@@ -421,7 +414,7 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
   autovector<DLRUHandle*> last_reference_list;
   size_t total_charge = e->CalcTotalCharge(metadata_charge_policy_);
   // printf("cache charge size=%lu\n", total_charge);
-
+  DLRUHandle* old;
   {
     MutexLock l(&mutex_);
 
@@ -440,7 +433,7 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
       if (handle == nullptr) {
         // Don't insert the entry but still return ok, as if the entry inserted
         // into cache and get evicted immediately.
-        e->SetPending(true);  // mark old as pending
+        e->SetEvictingToRM(true);  // mark old as evicting_to_rm
         evict_to_rm_list.push_back(e);
         last_reference_list.push_back(e);
       } else {
@@ -453,7 +446,7 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
     } else {
       // Insert into the cache. Note that the cache might get larger than its
       // capacity if not enough space was freed up.
-      DLRUHandle* old = table_.Insert(e);
+      old = table_.Insert(e);
       usage_ += total_charge;
       if (old != nullptr) {
         s = Status::OkOverwritten();
@@ -462,7 +455,12 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
         if (!old->HasRefs()) {
           // old is on DLRU because it's in cache and its reference count is 0
           if (remote_memory_ && !old->IsLocal()) {
-            RMLRU_Remove(old);
+            if (old->IsLocal()) {
+              LMLRU_Remove(old);
+              old->SetLocal(false);
+            } else {
+              RMLRU_Remove(old);
+            }
           } else {
             LMLRU_Remove(old);
           }
@@ -471,9 +469,14 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
           assert(usage_ >= old_total_charge);
           usage_ -= old_total_charge;
           if (remote_memory_ && old->IsLocal()) {
-            old->SetPending(true);  // mark old as pending
-            evict_to_rm_list.push_back(old);
-            last_reference_list.push_back(old);
+            if (old->IsLocal()) {
+              // for compatibility
+              old->SetEvictingToRM(true);
+              evict_to_rm_list.push_back(old);
+              last_reference_list.push_back(old);
+            } else {
+              last_reference_list.push_back(old);
+            }
           } else {
             last_reference_list.push_back(old);
           }
@@ -497,17 +500,21 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
     // TODO: reorder...
     std::unordered_set<DLRUHandle*> freed_set;
     for (auto entry : last_reference_list) {
-      assert(entry->IsLocal() == false);
-      if (entry->IsPending()) {
+      // Those in last_reference_list are either
+      //  1. "lm_lru -> rm_lru -> evicted"; or
+      //  2. "rm_lru -> evicted".
+      // And 1 must be evciting_to_rm, while 2 be not.
+      if (entry->IsEvictingToRM()) {
         // This is evicted from local to remote and then evicted from remote.
         // Thus, we can just free the value to avoid writing rm
-        entry->SetPending(false);
+        entry->SetEvictingToRM(false);
         entry->FreeValue();
         entry->Free();
       } else {
         // Otherwise, this entry is originally in remote. Thus, we need to
         // free rm, and then free this entry.
-        printf(">>>>> free rm LRUHandle(&=%p, rm_addr=0x%lx)\n", entry, (uint64_t)entry->value);
+        // printf(">>>>> free rm LRUHandle(&=%p, rm_addr=0x%lx)\n", entry,
+        //        (uint64_t)entry->value);
         remote_memory_->rmfree((uint64_t)entry->value);
         entry->value = nullptr;
         entry->Free();
@@ -517,6 +524,8 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
     for (auto entry : evict_to_rm_list) {
       if (freed_set.find(entry) == freed_set.end()) {
         MoveValueToRM(entry);
+        entry->SetLocal(false);
+        entry->SetEvictingToRM(false);
       }
     }
   } else {
@@ -547,10 +556,12 @@ Cache::Handle* DLRUCacheShard::Lookup(
       }
       if (!e->IsLocal()) {
         assert(remote_memory_);
-        // fetch it from remote memory
-        FetchFromRM(e, create_cb);
         // The entry is in RMLRU since it's in hash and in remote memory
         RMLRU_Remove(e);
+        // fetch it from remote memory
+        FetchValueFromRM(e, create_cb);
+        e->slice_size = 0;
+        e->SetLocal(true);
       }
       e->Ref();
       e->SetHit();
@@ -615,6 +626,11 @@ bool DLRUCacheShard::Release(Cache::Handle* handle, bool force_erase) {
 
   // Free the entry here outside of mutex for performance reasons
   if (last_reference) {
+    if (e->IsLocal()) {
+      e->FreeValue();
+    } else {
+      remote_memory_->rmfree((uint64_t)e->value);
+    }
     e->Free();
   }
   return last_reference;
@@ -652,7 +668,7 @@ Status DLRUCacheShard::Insert(const Slice& key, uint32_t hash, void* value,
   e->SetInCache(true);
   e->SetLocal(true);
   e->SetPriority(priority);
-  e->SetPending(false);
+  e->SetEvictingToRM(false);
   memcpy(e->key_data, key.data(), key.size());
 
   return InsertItem(e, handle, /* free_handle_on_fail */ true);

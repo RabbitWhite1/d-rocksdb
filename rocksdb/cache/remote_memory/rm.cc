@@ -14,11 +14,13 @@ RemoteMemory::RemoteMemory(std::string server_name, const size_t size) {
 }
 
 uint64_t RemoteMemory::rmalloc(size_t size) {
-  // allocator_->print();
-  uint64_t ret = allocator_->rmalloc(size);
-  // allocator_->print_size_info();
-  // allocator_->print();
-  return ret;
+  uint64_t rm_addr = allocator_->rmalloc(size);
+  if (rm_addr == 0) {
+    printf("NOSPACE\n");
+    allocator_->print_size_info();
+    allocator_->print(true);
+  }
+  return rm_addr;
 }
 
 RemoteMemory::~RemoteMemory() {
@@ -28,14 +30,10 @@ RemoteMemory::~RemoteMemory() {
 
 void RemoteMemory::rmfree(uint64_t addr) { 
   allocator_->rmfree(addr);
-  // allocator_->print_size_info();
-  // allocator_->print();
 }
 
 void RemoteMemory::rmfree(uint64_t addr, size_t size) {
   size_t freed_size = allocator_->rmfree(addr);
-  // allocator_->print_size_info();
-  // allocator_->print();
   assert(freed_size == size);
 }
 
