@@ -408,7 +408,7 @@ class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
                       autovector<DLRUHandle*>* evicted_to_rm_list);
   void EvictFromLMLRUToRMLRU(size_t charge,
                              autovector<DLRUHandle*>* evicted_to_rm_list);
-  void EvictFromRMLRU(size_t charge, autovector<DLRUHandle*>* deleted);
+  void EvictFromRMLRUAndFreeHandle(size_t charge);
   void MoveValueToRM(DLRUHandle* handle);
   void FetchValueFromRM(DLRUHandle* e,
                         const ShardedCache::CreateCallback& create_cb);

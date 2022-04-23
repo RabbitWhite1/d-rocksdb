@@ -234,7 +234,9 @@ void DLRUCacheShard::LMLRU_Remove(DLRUHandle* e) {
     assert(high_pri_pool_usage_ >= total_charge);
     high_pri_pool_usage_ -= total_charge;
   }
-  // printf("removed lm DLRUHandle(&=%p, charge=%lu, total_charge=%lu), lm_usage_/lm_capacity_=%lu/%.0lf\n", e, e->charge, total_charge, lm_usage_, lm_capacity_);
+  // printf("removed lm DLRUHandle(&=%p, charge=%lu, total_charge=%lu),
+  // lm_usage_/lm_capacity_=%lu/%.0lf\n", e, e->charge, total_charge, lm_usage_,
+  // lm_capacity_);
 }
 
 void DLRUCacheShard::LMLRU_Insert(DLRUHandle* e) {
@@ -262,7 +264,9 @@ void DLRUCacheShard::LMLRU_Insert(DLRUHandle* e) {
     lm_lru_low_pri_ = e;
   }
   lm_lru_usage_ += total_charge;
-  // printf("insertd lm DLRUHandle(&=%p, charge=%lu, total_charge=%lu), lm_usage_/lm_capacity_=%lu/%.0lf\n", e, e->charge, total_charge, lm_usage_, lm_capacity_);
+  // printf("insertd lm DLRUHandle(&=%p, charge=%lu, total_charge=%lu),
+  // lm_usage_/lm_capacity_=%lu/%.0lf\n", e, e->charge, total_charge, lm_usage_,
+  // lm_capacity_);
 }
 
 void DLRUCacheShard::RMLRU_Remove(DLRUHandle* e) {
@@ -274,7 +278,9 @@ void DLRUCacheShard::RMLRU_Remove(DLRUHandle* e) {
   size_t total_charge = e->CalcTotalCharge(metadata_charge_policy_);
   assert(rm_lru_usage_ >= total_charge);
   rm_lru_usage_ -= total_charge;
-  // printf("removed rm DLRUHandle(&=%p, charge=%lu, total_charge=%lu), rm_usage/rm_capacity=%lu/%.0lf\n", e, e->charge, total_charge, rm_usage_, rm_capacity_);
+  // printf("removed rm DLRUHandle(&=%p, charge=%lu, total_charge=%lu),
+  // rm_usage/rm_capacity=%lu/%.0lf\n", e, e->charge, total_charge, rm_usage_,
+  // rm_capacity_);
 }
 
 void DLRUCacheShard::RMLRU_Insert(DLRUHandle* e) {
@@ -288,7 +294,9 @@ void DLRUCacheShard::RMLRU_Insert(DLRUHandle* e) {
   e->next->prev = e;
   e->SetInHighPriPool(false);
   rm_lru_usage_ += total_charge;
-  // printf("insertd rm DLRUHandle(&=%p, charge=%lu, total_charge=%lu), rm_usage/rm_capacity=%lu/%.0lf\n", e, e->charge, total_charge, rm_usage_, rm_capacity_);
+  // printf("insertd rm DLRUHandle(&=%p, charge=%lu, total_charge=%lu),
+  // rm_usage/rm_capacity=%lu/%.0lf\n", e, e->charge, total_charge, rm_usage_,
+  // rm_capacity_);
 }
 
 void DLRUCacheShard::MaintainPoolSize() {
@@ -322,7 +330,8 @@ void DLRUCacheShard::EvictFromLMLRU(size_t charge,
 
 void DLRUCacheShard::EvictFromLMLRUToRMLRU(
     size_t charge, autovector<DLRUHandle*>* evicted_to_rm_list) {
-  // TODO: should use lm_usage+charge > lm_capacity_!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
+  // TODO: should use lm_usage+charge >
+  // lm_capacity_!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
   // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   while ((lm_usage_ + charge) > lm_capacity_ && lm_lru_.next != &lm_lru_) {
     DLRUHandle* old = lm_lru_.next;
@@ -338,11 +347,18 @@ void DLRUCacheShard::EvictFromLMLRUToRMLRU(
   }
 }
 
-void DLRUCacheShard::EvictFromRMLRU(size_t charge,
-                                    autovector<DLRUHandle*>* deleted) {
-  // TODO: don't need consider charge, because new block is inserted to lm_lru.
-  // will remove later.
-  while ((rm_usage_ + charge) > rm_capacity_ && rm_lru_.next != &rm_lru_) {
+void DLRUCacheShard::EvictFromRMLRUAndFreeHandle(size_t charge) {
+  // TODO: return the `rm_addr` is available, so that it doesn't need to find
+  // free region again later.
+  do {
+    // try to allocate and see if rm has enough space
+    {
+      uint64_t rm_addr = remote_memory_->rmalloc(charge);
+      if (rm_addr != 0) {
+        remote_memory_->rmfree(rm_addr);
+        break;
+      }
+    }
     DLRUHandle* old = rm_lru_.next;
     // DLRU list contains only elements which can be evicted
     assert(old->InCache() && !old->HasRefs());
@@ -353,8 +369,12 @@ void DLRUCacheShard::EvictFromRMLRU(size_t charge,
     // only when evicting from remote, total usage changes
     assert(usage_ >= old_total_charge);
     usage_ -= old_total_charge;
-    deleted->push_back(old);
-  }
+    assert(old->IsLocal() == false);
+    remote_memory_->rmfree((uint64_t)old->value);
+    old->value = nullptr;
+    old->Free();
+
+  } while (rm_lru_.next != rm_lru_.prev);
 }
 
 void DLRUCacheShard::MoveValueToRM(DLRUHandle* e) {
@@ -429,7 +449,16 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
     // is freed or the rm_lru list is empty
     if (remote_memory_) {
       EvictFromLMLRUToRMLRU(total_charge, &evict_to_rm_list);
-      EvictFromRMLRU(0, &last_reference_list);
+      for (auto lm_entry : evict_to_rm_list) {
+        lm_entry->SetEvictingToRM(true);
+        // 1. evict rm_entry from RM to free enough space for this lm_entry
+        EvictFromRMLRUAndFreeHandle(reinterpret_cast<Block*>(lm_entry->value)->size());
+        // 2. insert lm_entry to RM
+        assert(lm_entry->IsLocal() == true);
+        MoveValueToRM(lm_entry);
+        lm_entry->SetLocal(false);
+        lm_entry->SetEvictingToRM(false);
+      }
     } else {
       EvictFromLMLRU(total_charge, &last_reference_list);
     }
@@ -440,8 +469,6 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
       if (handle == nullptr) {
         // Don't insert the entry but still return ok, as if the entry inserted
         // into cache and get evicted immediately.
-        e->SetEvictingToRM(true);  // mark old as evicting_to_rm
-        evict_to_rm_list.push_back(e);
         last_reference_list.push_back(e);
       } else {
         if (free_handle_on_fail) {
@@ -510,43 +537,10 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
 
   // Try to insert the evicted entries into the secondary cache
   // Free the entries here outside of mutex for performance reasons
-  if (remote_memory_) {
-    // TODO: reorder...
-    std::unordered_set<DLRUHandle*> freed_set;
-    for (auto entry : last_reference_list) {
-      // Those in last_reference_list are either
-      //  1. "lm_lru -> rm_lru -> evicted"; or
-      //  2. "rm_lru -> evicted".
-      // And 1 must be evciting_to_rm, while 2 be not.
-      if (entry->IsEvictingToRM()) {
-        // This is evicted from local to remote and then evicted from remote.
-        // Thus, we can just free the value to avoid writing rm
-        entry->SetEvictingToRM(false);
-        entry->FreeValue();
-        entry->Free();
-      } else {
-        // Otherwise, this entry is originally in remote. Thus, we need to
-        // free rm, and then free this entry.
-        // printf(">>>>> free rm LRUHandle(&=%p, rm_addr=0x%lx)\n", entry,
-        //        (uint64_t)entry->value);
-        remote_memory_->rmfree((uint64_t)entry->value);
-        entry->value = nullptr;
-        entry->Free();
-      }
-      freed_set.insert(entry);
-    }
-    for (auto entry : evict_to_rm_list) {
-      if (freed_set.find(entry) == freed_set.end()) {
-        MoveValueToRM(entry);
-        entry->SetLocal(false);
-        entry->SetEvictingToRM(false);
-      }
-    }
-  } else {
-    for (auto entry : last_reference_list) {
-      entry->FreeValue();
-      entry->Free();
-    }
+  // For using rm, this is brought forward, see above.
+  for (auto entry : last_reference_list) {
+    entry->FreeValue();
+    entry->Free();
   }
 
   return s;
