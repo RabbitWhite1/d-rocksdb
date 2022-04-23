@@ -234,6 +234,7 @@ void DLRUCacheShard::LMLRU_Remove(DLRUHandle* e) {
     assert(high_pri_pool_usage_ >= total_charge);
     high_pri_pool_usage_ -= total_charge;
   }
+  // printf("removed lm DLRUHandle(&=%p, charge=%lu, total_charge=%lu), lm_usage_/lm_capacity_=%lu/%.0lf\n", e, e->charge, total_charge, lm_usage_, lm_capacity_);
 }
 
 void DLRUCacheShard::LMLRU_Insert(DLRUHandle* e) {
@@ -261,6 +262,7 @@ void DLRUCacheShard::LMLRU_Insert(DLRUHandle* e) {
     lm_lru_low_pri_ = e;
   }
   lm_lru_usage_ += total_charge;
+  // printf("insertd lm DLRUHandle(&=%p, charge=%lu, total_charge=%lu), lm_usage_/lm_capacity_=%lu/%.0lf\n", e, e->charge, total_charge, lm_usage_, lm_capacity_);
 }
 
 void DLRUCacheShard::RMLRU_Remove(DLRUHandle* e) {
@@ -272,6 +274,7 @@ void DLRUCacheShard::RMLRU_Remove(DLRUHandle* e) {
   size_t total_charge = e->CalcTotalCharge(metadata_charge_policy_);
   assert(rm_lru_usage_ >= total_charge);
   rm_lru_usage_ -= total_charge;
+  // printf("removed rm DLRUHandle(&=%p, charge=%lu, total_charge=%lu), rm_usage/rm_capacity=%lu/%.0lf\n", e, e->charge, total_charge, rm_usage_, rm_capacity_);
 }
 
 void DLRUCacheShard::RMLRU_Insert(DLRUHandle* e) {
@@ -285,6 +288,7 @@ void DLRUCacheShard::RMLRU_Insert(DLRUHandle* e) {
   e->next->prev = e;
   e->SetInHighPriPool(false);
   rm_lru_usage_ += total_charge;
+  // printf("insertd rm DLRUHandle(&=%p, charge=%lu, total_charge=%lu), rm_usage/rm_capacity=%lu/%.0lf\n", e, e->charge, total_charge, rm_usage_, rm_capacity_);
 }
 
 void DLRUCacheShard::MaintainPoolSize() {
@@ -318,7 +322,9 @@ void DLRUCacheShard::EvictFromLMLRU(size_t charge,
 
 void DLRUCacheShard::EvictFromLMLRUToRMLRU(
     size_t charge, autovector<DLRUHandle*>* evicted_to_rm_list) {
-  while ((lm_lru_usage_ + charge) > lm_capacity_ && lm_lru_.next != &lm_lru_) {
+  // TODO: should use lm_usage+charge > lm_capacity_!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
+  // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  while ((lm_usage_ + charge) > lm_capacity_ && lm_lru_.next != &lm_lru_) {
     DLRUHandle* old = lm_lru_.next;
     // DLRU list contains only elements which can be evicted
     assert(old->InCache() && !old->HasRefs());
@@ -329,6 +335,25 @@ void DLRUCacheShard::EvictFromLMLRUToRMLRU(
     // evicting from local to remote, so usage didn't change,
     // only when evicting from remote, total usage changes (see EvictFromRMLRU)
     evicted_to_rm_list->push_back(old);
+  }
+}
+
+void DLRUCacheShard::EvictFromRMLRU(size_t charge,
+                                    autovector<DLRUHandle*>* deleted) {
+  // TODO: don't need consider charge, because new block is inserted to lm_lru.
+  // will remove later.
+  while ((rm_usage_ + charge) > rm_capacity_ && rm_lru_.next != &rm_lru_) {
+    DLRUHandle* old = rm_lru_.next;
+    // DLRU list contains only elements which can be evicted
+    assert(old->InCache() && !old->HasRefs());
+    RMLRU_Remove(old);
+    table_.Remove(old->key(), old->hash);
+    old->SetInCache(false);
+    size_t old_total_charge = old->CalcTotalCharge(metadata_charge_policy_);
+    // only when evicting from remote, total usage changes
+    assert(usage_ >= old_total_charge);
+    usage_ -= old_total_charge;
+    deleted->push_back(old);
   }
 }
 
@@ -361,26 +386,8 @@ void DLRUCacheShard::FetchValueFromRM(
   Status s = create_cb(buf_data.get(), e->slice_size, &e->value, &e->charge);
   assert(s.ok());
   remote_memory_->rmfree(rm_addr);
-  // printf("free handle(&=%p, rm_addr=%lx, IsLocal=%d)\n", e, rm_addr, e->IsLocal());
-}
-
-void DLRUCacheShard::EvictFromRMLRU(size_t charge,
-                                    autovector<DLRUHandle*>* deleted) {
-  // TODO: don't need consider charge, because new block is inserted to lm_lru.
-  // will remove later.
-  while ((rm_lru_usage_ + charge) > rm_capacity_ && rm_lru_.next != &rm_lru_) {
-    DLRUHandle* old = rm_lru_.next;
-    // DLRU list contains only elements which can be evicted
-    assert(old->InCache() && !old->HasRefs());
-    RMLRU_Remove(old);
-    table_.Remove(old->key(), old->hash);
-    old->SetInCache(false);
-    size_t old_total_charge = old->CalcTotalCharge(metadata_charge_policy_);
-    // only when evicting from remote, total usage changes
-    assert(usage_ >= old_total_charge);
-    usage_ -= old_total_charge;
-    deleted->push_back(old);
-  }
+  // printf("free handle(&=%p, rm_addr=%lx, IsLocal=%d)\n", e, rm_addr,
+  // e->IsLocal());
 }
 
 void DLRUCacheShard::SetCapacity(size_t capacity) {
@@ -427,7 +434,7 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
       EvictFromLMLRU(total_charge, &last_reference_list);
     }
 
-    if ((usage_ + total_charge) > capacity_ &&
+    if ((lm_usage_ + total_charge) > lm_capacity_ &&
         (strict_capacity_limit_ || handle == nullptr)) {
       e->SetInCache(false);
       if (handle == nullptr) {
@@ -447,6 +454,7 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
       // Insert into the cache. Note that the cache might get larger than its
       // capacity if not enough space was freed up.
       old = table_.Insert(e);
+      lm_usage_ += total_charge;
       usage_ += total_charge;
       if (old != nullptr) {
         s = Status::OkOverwritten();
@@ -471,13 +479,19 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
           if (remote_memory_ && old->IsLocal()) {
             if (old->IsLocal()) {
               // for compatibility
+              assert(lm_usage_ >= old_total_charge);
+              lm_usage_ -= old_total_charge;
               old->SetEvictingToRM(true);
               evict_to_rm_list.push_back(old);
               last_reference_list.push_back(old);
             } else {
+              assert(rm_usage_ >= old_total_charge);
+              rm_usage_ -= old_total_charge;
               last_reference_list.push_back(old);
             }
           } else {
+            assert(lm_usage_ >= old_total_charge);
+            lm_usage_ -= old_total_charge;
             last_reference_list.push_back(old);
           }
         }
@@ -598,8 +612,9 @@ bool DLRUCacheShard::Release(Cache::Handle* handle, bool force_erase) {
     last_reference = e->Unref();
     if (last_reference && e->InCache()) {
       // The item is still in cache, and nobody else holds a reference to it
-      if (usage_ > capacity_ || force_erase) {
+      if (lm_usage_ > lm_capacity_ || force_erase) {
         // The DLRU list must be empty since the cache is full
+        assert(e->IsLocal() == true);
         assert(lm_lru_.next == &lm_lru_ || force_erase);
         // Take this opportunity and remove the item
         table_.Remove(e->key(), e->hash);
@@ -621,6 +636,8 @@ bool DLRUCacheShard::Release(Cache::Handle* handle, bool force_erase) {
       size_t total_charge = e->CalcTotalCharge(metadata_charge_policy_);
       assert(usage_ >= total_charge);
       usage_ -= total_charge;
+      assert(lm_usage_ >= total_charge);
+      lm_usage_ -= total_charge;
     }
   }
 
@@ -675,6 +692,7 @@ Status DLRUCacheShard::Insert(const Slice& key, uint32_t hash, void* value,
 }
 
 void DLRUCacheShard::Erase(const Slice& key, uint32_t hash) {
+  assert(false && "Not Debugged.");
   DLRUHandle* e;
   bool last_reference = false;
   {
@@ -690,6 +708,8 @@ void DLRUCacheShard::Erase(const Slice& key, uint32_t hash) {
         size_t total_charge = e->CalcTotalCharge(metadata_charge_policy_);
         assert(usage_ >= total_charge);
         usage_ -= total_charge;
+        assert(lm_usage_ >= total_charge);
+        lm_usage_ -= total_charge;
         last_reference = true;
       }
     }
@@ -711,6 +731,16 @@ bool DLRUCacheShard::IsReady(Cache::Handle* handle) {
 size_t DLRUCacheShard::GetUsage() const {
   MutexLock l(&mutex_);
   return usage_;
+}
+
+size_t DLRUCacheShard::GetLMUsage() const {
+  MutexLock l(&mutex_);
+  return lm_usage_;
+}
+
+size_t DLRUCacheShard::GetRMUsage() const {
+  MutexLock l(&mutex_);
+  return rm_usage_;
 }
 
 size_t DLRUCacheShard::GetPinnedUsage() const {
@@ -743,8 +773,12 @@ DLRUCache::DLRUCache(size_t capacity, int num_shard_bits,
       port::cacheline_aligned_alloc(sizeof(DLRUCacheShard) * num_shards_));
   size_t per_shard = (capacity + (num_shards_ - 1)) / num_shards_;
   printf("DLRUCache num_shards: %d, per_shard: %lu\n", num_shards_, per_shard);
-  remote_memory_ =
-      std::make_shared<RemoteMemory>("10.0.0.5", capacity * rm_ratio);
+  if (rm_ratio > 0.0) {
+    remote_memory_ =
+        std::make_shared<RemoteMemory>("10.0.0.5", capacity * rm_ratio);
+  } else {
+    remote_memory_ = nullptr;
+  }
   for (int i = 0; i < num_shards_; i++) {
     new (&shards_[i]) DLRUCacheShard(
         per_shard, strict_capacity_limit, high_pri_pool_ratio, rm_ratio,

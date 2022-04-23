@@ -352,6 +352,8 @@ class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
 
   virtual size_t GetUsage() const override;
   virtual size_t GetPinnedUsage() const override;
+  virtual size_t GetLMUsage() const;
+  virtual size_t GetRMUsage() const;
 
   virtual void ApplyToSomeEntries(
       const std::function<void(const Slice& key, void* value, size_t charge,
@@ -490,6 +492,12 @@ class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
 
   // Memory size for entries residing in the cache
   size_t usage_;
+
+  // Memory size for entries residing in the local cache
+  size_t lm_usage_;
+
+  // Memory size for entries residing in the local cache
+  size_t rm_usage_;
 
   // Memory size for entries residing only in the LMLRU list
   size_t lm_lru_usage_;
