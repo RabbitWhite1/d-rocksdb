@@ -195,6 +195,7 @@ class CoreWorkload {
   static Generator<uint64_t> *GetFieldLenGenerator(const utils::Properties &p);
   std::string BuildKeyName(uint64_t key_num);
   void BuildValues(std::vector<DB::Field> &values);
+  void BuildValuesFromKey(const std::string &key, std::vector<ycsbc::DB::Field> &values);
   void BuildSingleValue(std::vector<DB::Field> &update);
 
   uint64_t NextTransactionKeyNum();
@@ -226,7 +227,6 @@ class CoreWorkload {
 inline uint64_t CoreWorkload::NextTransactionKeyNum() {
   uint64_t key_num;
   do {
-    // std::cout << "here1, key_num: " << key_num << std::endl;
     key_num = key_chooser_->Next();
   } while (key_num > transaction_insert_key_sequence_->Last());
   return key_num;
@@ -239,7 +239,7 @@ inline std::string CoreWorkload::NextFieldName() {
 inline bool CoreWorkload::DoInsert(DB &db) {
   const std::string key = BuildKeyName(insert_key_sequence_->Next());
   std::vector<DB::Field> fields;
-  BuildValues(fields);
+  BuildValuesFromKey(key, fields);
   return db.Insert(table_name_, key, fields) == DB::kOK;
 }
 
@@ -333,7 +333,8 @@ inline int CoreWorkload::TransactionInsert(DB &db) {
   uint64_t key_num = transaction_insert_key_sequence_->Next();
   const std::string key = BuildKeyName(key_num);
   std::vector<DB::Field> values;
-  BuildValues(values);
+  // BuildValues(values);
+  BuildValuesFromKey(key, values);
   int s = db.Insert(table_name_, key, values);
   transaction_insert_key_sequence_->Acknowledge(key_num);
   return s;

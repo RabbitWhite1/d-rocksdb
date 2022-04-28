@@ -81,6 +81,9 @@ namespace {
   const std::string PROP_CACHE_SIZE = "rocksdb.cache_size";
   const std::string PROP_CACHE_SIZE_DEFAULT = "0";
 
+  const std::string PROP_RM_RATIO = "rocksdb.rm_ratio";
+  const std::string PROP_RM_RATIO_DEFAULT = "0.0";
+
   const std::string PROP_TABLE_CACHE_NUMSHARDBITS = "rocksdb.table_cache_numshardbits";
   const std::string PROP_TABLE_CACHE_NUMSHARDBITS_DEFAULT = "6";
 
@@ -315,9 +318,10 @@ void RocksdbDB::GetOptions(const utils::Properties &props, rocksdb::Options *opt
     size_t cache_size = std::stoul(props.GetProperty(PROP_CACHE_SIZE, PROP_CACHE_SIZE_DEFAULT));
     int table_cache_numshardbits = std::stoi(props.GetProperty(PROP_TABLE_CACHE_NUMSHARDBITS, 
                                                                PROP_TABLE_CACHE_NUMSHARDBITS_DEFAULT));
+    double rm_ratio = std::stod(props.GetProperty(PROP_RM_RATIO, PROP_RM_RATIO_DEFAULT));
     printf("cache_size: %lu, table_cache_numshardbits: %d\n", cache_size, table_cache_numshardbits);
     if (cache_size > 0) {
-      block_cache = rocksdb::NewDLRUCache(cache_size*2, table_cache_numshardbits, false, 0.5, /*rm_ratio=*/0.8);
+      block_cache = rocksdb::NewDLRUCache(cache_size, table_cache_numshardbits, false, 0.5, /*rm_ratio=*/rm_ratio);
       // block_cache = rocksdb::NewLRUCache(cache_size, table_cache_numshardbits, false, 0.5);
       table_options.block_cache = block_cache;
     } else {
@@ -358,11 +362,12 @@ void RocksdbDB::GetOptions(const utils::Properties &props, rocksdb::Options *opt
 
 void RocksdbDB::SerializeRow(const std::vector<Field> &values, std::string &data) {
   for (const Field &field : values) {
-    uint32_t len = field.name.size();
-    data.append(reinterpret_cast<char *>(&len), sizeof(uint32_t));
-    data.append(field.name.data(), field.name.size());
-    len = field.value.size();
-    data.append(reinterpret_cast<char *>(&len), sizeof(uint32_t));
+    // uint32_t len = field.name.size();
+    // data.append(reinterpret_cast<char *>(&len), sizeof(uint32_t));
+    // data.append(field.name.data(), field.name.size());
+    // len = field.value.size();
+    // data.append(reinterpret_cast<char *>(&len), sizeof(uint32_t));
+    // data.append(field.value.data(), field.value.size());
     data.append(field.value.data(), field.value.size());
   }
 }
@@ -421,6 +426,7 @@ DB::Status RocksdbDB::ReadSingle(const std::string &table, const std::string &ke
                                  std::vector<Field> &result) {
   std::string data;
   rocksdb::ReadOptions read_options = rocksdb::ReadOptions();
+  
   // read_options.fill_cache = false;
   rocksdb::Status s = db_->Get(read_options, key, &data);
   if (s.IsNotFound()) {
@@ -428,12 +434,18 @@ DB::Status RocksdbDB::ReadSingle(const std::string &table, const std::string &ke
   } else if (!s.ok()) {
     throw utils::Exception(std::string("RocksDB Get: ") + s.ToString());
   }
-  if (fields != nullptr) {
-    DeserializeRowFilter(result, data, *fields);
-  } else {
-    DeserializeRow(result, data);
-    assert(result.size() == static_cast<size_t>(fieldcount_));
+  if (s.ok()) {
+    if (data.find(key) != 0) {
+      printf("key=%s, while value=%s\n", key.c_str(), data.c_str());
+      throw utils::Exception("ReadSingle: not correct data");
+    }
   }
+  // if (fields != nullptr) {
+  //   DeserializeRowFilter(result, data, *fields);
+  // } else {
+  //   DeserializeRow(result, data);
+  //   assert(result.size() == static_cast<size_t>(fieldcount_));
+  // }
   return kOK;
 }
 
@@ -508,7 +520,6 @@ DB::Status RocksdbDB::InsertSingle(const std::string &table, const std::string &
                                    std::vector<Field> &values) {
   std::string data;
   SerializeRow(values, data);
-  // printf("key length: %lu, data legnth: %lu, item name length: %lu, item value length: %lu\n", key.length(), data.length(), values[0].name.length(), values[0].value.length());
   rocksdb::WriteOptions wopt;
   rocksdb::Status s = db_->Put(wopt, key, data);
   if (!s.ok()) {

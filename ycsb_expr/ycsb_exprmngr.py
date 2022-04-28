@@ -38,6 +38,7 @@ rocksdb.use_direct_reads=false
 rocksdb.allow_mmap_writes=false
 rocksdb.allow_mmap_reads=false
 rocksdb.cache_size={cache_size}
+rocksdb.rm_ratio={rm_ratio}
 rocksdb.table_cache_numshardbits={table_cache_numshardbits}
 rocksdb.compressed_cache_size=0
 rocksdb.bloom_bits=0
@@ -199,8 +200,9 @@ if __name__ == '__main__':
         recordcount = 1048576
         threads = 1
         table_cache_numshardbits = 1
-        conf_id = mngr.get_id(workload=workload, recordcount=recordcount, operationcount=operationcount, threads=threads, write_buffer_size=write_buffer_size, cache_size=cache_size, version=version, zipfian_alpha=zipfian_alpha, requestdistribution=requestdistribution,max_write_buffer_number=max_write_buffer_number,max_background_jobs=max_background_jobs, table_cache_numshardbits=table_cache_numshardbits,min_write_buffer_number_to_merge=min_write_buffer_number_to_merge)
-        rocksdb_properties = ROCKSDB_PROPERTIES.format(workload=workload, write_buffer_size=write_buffer_size, cache_size=cache_size,max_write_buffer_number=max_write_buffer_number, dbname=DBNAMES[workload],max_background_jobs=max_background_jobs,table_cache_numshardbits=table_cache_numshardbits,min_write_buffer_number_to_merge=min_write_buffer_number_to_merge)
+        rm_ratio = 0.9
+        conf_id = mngr.get_id(workload=workload, recordcount=recordcount, operationcount=operationcount, threads=threads, write_buffer_size=write_buffer_size, cache_size=cache_size, version=version, zipfian_alpha=zipfian_alpha, requestdistribution=requestdistribution,max_write_buffer_number=max_write_buffer_number,max_background_jobs=max_background_jobs, table_cache_numshardbits=table_cache_numshardbits,min_write_buffer_number_to_merge=min_write_buffer_number_to_merge, rm_ratio=rm_ratio)
+        rocksdb_properties = ROCKSDB_PROPERTIES.format(workload=workload, write_buffer_size=write_buffer_size, cache_size=cache_size,max_write_buffer_number=max_write_buffer_number, dbname=DBNAMES[workload],max_background_jobs=max_background_jobs,table_cache_numshardbits=table_cache_numshardbits,min_write_buffer_number_to_merge=min_write_buffer_number_to_merge, rm_ratio=rm_ratio)
         workload_conf = WORKLOADS[workload].format(recordcount=recordcount, operationcount=operationcount, zipfian_alpha=zipfian_alpha, requestdistribution=requestdistribution)
         with open(osp.join(DB_DIRNAME, f'rocksdb_properties/{conf_id}.properties'), 'w') as rp:
             rp.write(rocksdb_properties)

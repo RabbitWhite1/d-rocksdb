@@ -25,5 +25,5 @@
 ### YCSB
 
 - [ ] support configuration of using `d_lru_cache` or normal `lru_cache`
-- [ ] support configuration of using `rm_ratio`
-- [ ] modify value generator to use transformation of key, for easier verification of the correctness.
+- [x] support configuration of using `rm_ratio`
+- [x] modify value generator to use transformation of key, for easier verification of the correctness.

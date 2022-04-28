@@ -227,6 +227,17 @@ void CoreWorkload::BuildValues(std::vector<ycsbc::DB::Field> &values) {
   }
 }
 
+void CoreWorkload::BuildValuesFromKey(const std::string &key,
+                                      std::vector<ycsbc::DB::Field> &values) {
+  values.push_back(DB::Field());
+  ycsbc::DB::Field &field = values.back();
+  field.name.append(field_prefix_).append(std::to_string(0));
+  uint64_t len = field_len_generator_->Next();
+  field.value.reserve(len);
+  field.value.append(key);
+  field.value.append(std::string(len - key.size(), '_'));
+}
+
 void CoreWorkload::BuildSingleValue(std::vector<ycsbc::DB::Field> &values) {
   values.push_back(DB::Field());
   ycsbc::DB::Field &field = values.back();

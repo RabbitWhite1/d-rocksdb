@@ -32,3 +32,6 @@ columns:
   - name: min_write_buffer_number_to_merge
     type: int
     default: 2
+  - name: rm_ratio
+    type: float
+    default: 0.0

@@ -783,7 +783,7 @@ DLRUCache::DLRUCache(size_t capacity, int num_shard_bits,
   shards_ = reinterpret_cast<DLRUCacheShard*>(
       port::cacheline_aligned_alloc(sizeof(DLRUCacheShard) * num_shards_));
   size_t per_shard = (capacity + (num_shards_ - 1)) / num_shards_;
-  printf("DLRUCache num_shards: %d, per_shard: %lu\n", num_shards_, per_shard);
+  printf("DLRUCache num_shards=%d, per_shard=%lu, rm_ratio=%lf\n", num_shards_, per_shard, rm_ratio);
   for (int i = 0; i < num_shards_; i++) {
     new (&shards_[i])
         DLRUCacheShard(per_shard, strict_capacity_limit, high_pri_pool_ratio,
