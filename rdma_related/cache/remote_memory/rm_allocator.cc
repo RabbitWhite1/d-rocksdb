@@ -12,6 +12,8 @@ RemoteMemoryAllocator::RemoteMemoryAllocator(uint64_t addr, size_t size)
   head_->is_free = true;
   head_->prev = nullptr;
   head_->next = nullptr;
+  head_->next_free = nullptr;
+  head_->prev_free = nullptr;
   free_head_ = head_;
 }
 
@@ -87,11 +89,11 @@ uint64_t RemoteMemoryAllocator::rmalloc(size_t size) {
     if (free_region == nullptr) {
       return NOSPACE;
     }
-    printf(
-        "[%-16s] allocated ([0x%lx, 0x%lx), size=0x%lx) from region([0x%lx, "
-        "0x%lx), size=0x%lx)\n",
-        "Info", allocated_addr, allocated_addr + size, size, free_region->addr,
-        free_region->addr + free_region_size, free_region_size);
+    // printf(
+    //     "[%-16s] allocated ([0x%lx, 0x%lx), size=0x%lx) from region([0x%lx, "
+    //     "0x%lx), size=0x%lx)\n",
+    //     "Info", allocated_addr, allocated_addr + size, size, free_region->addr,
+    //     free_region->addr + free_region_size, free_region_size);
     assert(allocated_addr == free_region->addr && size == free_region->size);
     addr_to_region_.insert({allocated_addr, free_region});
   }
@@ -126,7 +128,7 @@ RMRegion *RemoteMemoryAllocator::prepend_free(RMRegion *region) {
 }
 
 size_t RemoteMemoryAllocator::rmfree(uint64_t addr) {
-  printf("[%-16s] free 0x%lx\n", "Info", addr);
+  // printf("[%-16s] free 0x%lx\n", "Info", addr);
   std::lock_guard<std::mutex> lock(mutex_);
   RMRegion *region = addr_to_region_.at(addr);
   size_t size_to_free = region->size;

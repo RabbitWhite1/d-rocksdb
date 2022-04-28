@@ -23,6 +23,7 @@ public:
 
   uint64_t rmalloc(size_t size);
   void rmfree(uint64_t rm_addr);
+  void rmfree(uint64_t addr, size_t size);  // free with verify.
   int read(uint64_t rm_addr, void *buf, size_t size);
   int write(uint64_t rm_addr, void *buf, size_t size);
 

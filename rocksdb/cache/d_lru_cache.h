@@ -404,10 +404,10 @@ class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
   // to hold (usage_ + charge) is freed or the rm_lru list is empty
   // This function is not thread safe - it needs to be executed while
   // holding the mutex_
+  void EvictFromLRU(size_t charge,
+                      autovector<DLRUHandle*>* evicted_from_lm_list);
   void EvictFromLMLRU(size_t charge,
-                      autovector<DLRUHandle*>* evicted_to_rm_list);
-  void EvictFromLMLRUToRMLRU(size_t charge,
-                             autovector<DLRUHandle*>* evicted_to_rm_list);
+                      autovector<DLRUHandle*>* evicted_from_lm_list);
   void EvictFromRMLRUAndFreeHandle(size_t charge);
   void MoveValueToRM(DLRUHandle* handle);
   void FetchValueFromRM(DLRUHandle* e,

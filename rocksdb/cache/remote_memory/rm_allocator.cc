@@ -12,6 +12,8 @@ RemoteMemoryAllocator::RemoteMemoryAllocator(uint64_t addr, size_t size)
   head_->is_free = true;
   head_->prev = nullptr;
   head_->next = nullptr;
+  head_->next_free = nullptr;
+  head_->prev_free = nullptr;
   free_head_ = head_;
 }
 
@@ -75,8 +77,11 @@ uint64_t RemoteMemoryAllocator::rmalloc(size_t size) {
         if (free_region == free_head_) {
           free_head_ = free_region->next_free;
         } else {
+          assert (free_region->prev_free != nullptr);
           free_region->prev_free->next_free = free_region->next_free;
-          free_region->next_free->prev_free = free_region->prev_free;
+          if (free_region->next_free) {
+            free_region->next_free->prev_free = free_region->prev_free;
+          }
         }
         free_region->next_free = nullptr;
         free_region->prev_free = nullptr;

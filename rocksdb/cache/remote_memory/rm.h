@@ -21,6 +21,8 @@ public:
   RemoteMemory(std::string server_name, const size_t size);
   ~RemoteMemory();
 
+  void print();
+
   uint64_t rmalloc(size_t size);
   void rmfree(uint64_t rm_addr);
   void rmfree(uint64_t addr, size_t size);  // free with verify.

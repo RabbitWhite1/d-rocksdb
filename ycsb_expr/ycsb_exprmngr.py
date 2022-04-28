@@ -193,11 +193,12 @@ if __name__ == '__main__':
         
         workload = 'c'
         operationcount = 20000000
-        cache_size = 1*1024**2
+        cache_size = 256*1024**2
         min_write_buffer_number_to_merge = max_write_buffer_number - 2
         write_buffer_size = 256*1024**2
         recordcount = 1048576
         threads = 1
+        table_cache_numshardbits = 1
         conf_id = mngr.get_id(workload=workload, recordcount=recordcount, operationcount=operationcount, threads=threads, write_buffer_size=write_buffer_size, cache_size=cache_size, version=version, zipfian_alpha=zipfian_alpha, requestdistribution=requestdistribution,max_write_buffer_number=max_write_buffer_number,max_background_jobs=max_background_jobs, table_cache_numshardbits=table_cache_numshardbits,min_write_buffer_number_to_merge=min_write_buffer_number_to_merge)
         rocksdb_properties = ROCKSDB_PROPERTIES.format(workload=workload, write_buffer_size=write_buffer_size, cache_size=cache_size,max_write_buffer_number=max_write_buffer_number, dbname=DBNAMES[workload],max_background_jobs=max_background_jobs,table_cache_numshardbits=table_cache_numshardbits,min_write_buffer_number_to_merge=min_write_buffer_number_to_merge)
         workload_conf = WORKLOADS[workload].format(recordcount=recordcount, operationcount=operationcount, zipfian_alpha=zipfian_alpha, requestdistribution=requestdistribution)

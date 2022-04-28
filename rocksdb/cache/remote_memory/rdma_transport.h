@@ -11,6 +11,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 
 #include "rdma_utils.h"
 
@@ -21,9 +22,19 @@ namespace rdma {
 
 constexpr char *DEFAULT_PORT = (char *)"51216";
 constexpr int DEFAULT_MAX_WR = 64;
-constexpr int DEFAULT_MAX_QP = 1;
+constexpr int DEFAULT_MAX_QP = 64;
+constexpr int DEFAULT_MAX_CLIENT_QP = 1;
 constexpr int DEFAULT_MSG_LENGTH = 1024;
 constexpr int DEFAULT_BUF_LENGTH = 8192;
+
+enum rdma_id_state {
+  RDMA_ID_STATE_FREE = 0,
+  RDMA_ID_STATE_CONNECTED = 1,
+  RDMA_ID_STATE_DISCONNECTED = 2,
+  RDMA_ID_STATE_TIMEWAIT_EXITED = 3,
+  RDMA_ID_STATE_QP_DESTROYED = 4,
+  RDMA_ID_STATE_ID_DESTROYED = 5,
+};
 
 /* Resources used in the example */
 struct Context {
@@ -40,6 +51,7 @@ struct Context {
   struct rdma_cm_id *srq_id;
   struct rdma_cm_id *listen_id;
   struct rdma_cm_id **conn_ids;
+  enum rdma_id_state *id_states;
   struct rdma_event_channel *event_channel;
   struct ibv_mr *send_mr;
   struct ibv_mr *recv_mr;
@@ -85,7 +97,8 @@ private:
   struct rdma::Context *ctx_;
   struct rdma_addrinfo *rai_;
 
-  int next_conn_ids_idx = 0;
+  std::mutex mutex_;
+  std::unordered_map<uint32_t, size_t> qp_num_2_conn_idx;
 
   int init_resources(struct rdma_addrinfo *rai);
   void destroy_resources();
@@ -96,6 +109,7 @@ private:
   int connect_server(struct rdma_addrinfo *rai);
   int handle_connect_request(struct rdma_cm_event *cm_event);
   int handle_disconnected(struct rdma_cm_event *cm_event);
+  int handle_timewait_exit(struct rdma_cm_event *cm_event);
 };
 
 } // namespace rdma

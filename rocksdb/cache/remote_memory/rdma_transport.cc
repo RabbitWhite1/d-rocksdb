@@ -26,6 +26,12 @@ rdma::Transport::Transport(bool server, const char *server_name) {
   }
   ctx_->conn_ids =
       (struct rdma_cm_id **)calloc(ctx_->qp_count, sizeof(struct rdma_cm_id *));
+  memset(ctx_->conn_ids, 0, ctx_->qp_count * sizeof(struct rdma_cm_id *));
+  ctx_->id_states =
+      (enum rdma_id_state *)calloc(ctx_->qp_count, sizeof(enum rdma_id_state));
+  for (int i = 0; i < ctx_->qp_count; i++) {
+    ctx_->id_states[i] = RDMA_ID_STATE_FREE;
+  }
   ctx_->send_buf = (char *)malloc(ctx_->msg_length);
   memset(ctx_->send_buf, 0, ctx_->msg_length);
   ctx_->recv_buf = (char *)malloc(ctx_->msg_length);
@@ -45,13 +51,15 @@ rdma::Transport::Transport(bool server, const char *server_name, size_t rm_size,
   int ret;
   struct rdma_addrinfo *rai, hints;
 
+  assert(server == false && "only client can specify `rm_size`");
+
   ctx_ = (struct rdma::Context *)malloc(sizeof(struct rdma::Context));
   memset(ctx_, 0, sizeof(rdma::Context));
   memset(&hints, 0, sizeof(struct rdma_addrinfo));
   ctx_->server = server;
   ctx_->server_name = strdup(server_name);
   ctx_->server_port = DEFAULT_PORT;
-  ctx_->qp_count = DEFAULT_MAX_QP;
+  ctx_->qp_count = DEFAULT_MAX_CLIENT_QP;
   ctx_->max_wr = DEFAULT_MAX_WR;
   ctx_->msg_length = DEFAULT_MSG_LENGTH;
   ctx_->local_buf_size = local_buf_size;
@@ -67,6 +75,12 @@ rdma::Transport::Transport(bool server, const char *server_name, size_t rm_size,
   }
   ctx_->conn_ids =
       (struct rdma_cm_id **)calloc(ctx_->qp_count, sizeof(struct rdma_cm_id *));
+  memset(ctx_->conn_ids, 0, ctx_->qp_count * sizeof(struct rdma_cm_id *));
+  ctx_->id_states =
+      (enum rdma_id_state *)calloc(ctx_->qp_count, sizeof(enum rdma_id_state));
+  for (int i = 0; i < ctx_->qp_count; i++) {
+    ctx_->id_states[i] = RDMA_ID_STATE_FREE;
+  }
   ctx_->send_buf = (char *)malloc(ctx_->msg_length);
   memset(ctx_->send_buf, 0, ctx_->msg_length);
   ctx_->recv_buf = (char *)malloc(ctx_->msg_length);
@@ -236,14 +250,15 @@ void rdma::Transport::destroy_resources() {
           ctx_->conn_ids[i]->qp->state == IBV_QPS_RTS) {
         rdma_disconnect(ctx_->conn_ids[i]);
       }
-      // int ret = get_cm_event(ctx_->event_channel, RDMA_CM_EVENT_DISCONNECTED,
-      //                    &cm_event);
       rdma_destroy_qp(ctx_->conn_ids[i]);
       rdma_destroy_id(ctx_->conn_ids[i]);
       printf("[%-16s] connection %d (qp_num=%u) destroyed\n", "Info", i,
              qp_num);
     }
     free(ctx_->conn_ids);
+  }
+  if (ctx_->id_states) {
+    free(ctx_->id_states);
   }
   if (ctx_->recv_mr)
     rdma_dereg_mr(ctx_->recv_mr);
@@ -324,15 +339,25 @@ int rdma::Transport::run_server() {
       VERB_ERR("rdma_get_cm_event", ret);
       return ret;
     }
-    printf("[%-16s] cm_event: %s (%d)\n", "CM Event",
+    printf("[%-16s] got cm_event: %s (%d)\n", "CM Event",
            rdma_event_str(cm_event->event), cm_event->event);
     if (cm_event->event == RDMA_CM_EVENT_CONNECT_REQUEST) {
       handle_connect_request(cm_event);
-      rdma_ack_cm_event(cm_event);
+      ret = rdma_ack_cm_event(cm_event);
+      if (ret) {
+        VERB_ERR("rdma_ack_cm_event", ret);
+        return ret;
+      }
     } else if (cm_event->event == RDMA_CM_EVENT_ESTABLISHED) {
-      rdma_ack_cm_event(cm_event);
+      ret = rdma_ack_cm_event(cm_event);
+      if (ret) {
+        VERB_ERR("rdma_ack_cm_event", ret);
+        return ret;
+      }
     } else if (cm_event->event == RDMA_CM_EVENT_DISCONNECTED) {
       handle_disconnected(cm_event);
+    } else if (cm_event->event == RDMA_CM_EVENT_TIMEWAIT_EXIT) {
+      handle_timewait_exit(cm_event);
     }
   }
 }
@@ -344,6 +369,9 @@ int rdma::Transport::connect_server(struct rdma_addrinfo *rai) {
   int ret;
   char *ptr;
   struct ibv_qp_init_attr attr;
+
+  assert(ctx_->server == false);
+  assert(ctx_->qp_count == 1 && "only support 1 qp for each client now");
 
   for (int i = 0; i < ctx_->qp_count; i++) {
     memset(&attr, 0, sizeof(attr));
@@ -371,6 +399,8 @@ int rdma::Transport::connect_server(struct rdma_addrinfo *rai) {
       VERB_ERR("rdma_connect", ret);
       return ret;
     }
+
+    ctx_->id_states[i] = RDMA_ID_STATE_CONNECTED;
 
     // TODO: this information exchange maybe redundant (in the loop)
     // send requested remote memory information
@@ -402,7 +432,7 @@ int rdma::Transport::connect_server(struct rdma_addrinfo *rai) {
     printf("[%-16s] remote memory info: rkey: 0x%x, addr: 0x%lx, size: %lu\n",
            "Info", ctx_->rm_rkey, ctx_->rm_addr, ctx_->rm_size);
   }
-  
+
   return 0;
 }
 
@@ -414,10 +444,18 @@ int rdma::Transport::connect_server(struct rdma_addrinfo *rai) {
 int rdma::Transport::handle_connect_request(struct rdma_cm_event *cm_event) {
   int ret;
   struct ibv_qp_init_attr qp_attr;
+  struct rdma_cm_id *conn_id;
 
-  ctx_->conn_ids[next_conn_ids_idx] = cm_event->id;
-  struct rdma_cm_id *conn_id = ctx_->conn_ids[next_conn_ids_idx];
-  ++next_conn_ids_idx;
+  // TODO: return error instead of assert
+  int next_conn_ids_idx = 0;
+  while (next_conn_ids_idx < ctx_->qp_count && ctx_->id_states[next_conn_ids_idx] != RDMA_ID_STATE_FREE) {
+    next_conn_ids_idx++;
+  }
+  if (next_conn_ids_idx == ctx_->qp_count) {
+    printf("[%-16s] failed to connect, all conn_ids are connected\n", "Connection");
+    rdma_reject(cm_event->id, NULL, 0);
+    return -1;
+  }
 
   /* Create the queue pair */
   memset(&qp_attr, 0, sizeof(qp_attr));
@@ -431,18 +469,29 @@ int rdma::Transport::handle_connect_request(struct rdma_cm_event *cm_event) {
   qp_attr.recv_cq = ctx_->srq_cq;
   qp_attr.srq = ctx_->srq;
   qp_attr.sq_sig_all = 0;
-  ret = rdma_create_qp(conn_id, NULL, &qp_attr);
-  printf("[%-16s] create qp_num: %u\n", "Connection", conn_id->qp->qp_num);
-  if (ret) {
-    VERB_ERR("rdma_create_qp", ret);
-    return ret;
-  }
-  /* Set the new connection to use our SRQ */
-  conn_id->srq = ctx_->srq;
-  ret = rdma_accept(conn_id, NULL);
-  if (ret) {
-    VERB_ERR("rdma_accept", ret);
-    return ret;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    assert(ctx_->id_states[next_conn_ids_idx] == RDMA_ID_STATE_FREE);
+    ctx_->conn_ids[next_conn_ids_idx] = cm_event->id;
+    conn_id = ctx_->conn_ids[next_conn_ids_idx];
+    ret = rdma_create_qp(conn_id, NULL, &qp_attr);
+    printf("[%-16s] create qp_num: %u\n", "Connection", conn_id->qp->qp_num);
+    if (ret) {
+      VERB_ERR("rdma_create_qp", ret);
+      return ret;
+    }
+    /* Set the new connection to use our SRQ */
+    conn_id->srq = ctx_->srq;
+    ret = rdma_accept(conn_id, NULL);
+    if (ret) {
+      VERB_ERR("rdma_accept", ret);
+      return ret;
+    }
+
+    ctx_->id_states[next_conn_ids_idx] = RDMA_ID_STATE_CONNECTED;
+    qp_num_2_conn_idx.insert(
+        std::make_pair(conn_id->qp->qp_num, next_conn_ids_idx));
+    ++next_conn_ids_idx;
   }
 
   // recv requested remote memory information
@@ -478,6 +527,7 @@ int rdma::Transport::handle_connect_request(struct rdma_cm_event *cm_event) {
     VERB_ERR("send", ret);
     return ret;
   }
+
   printf("[%-16s] sent rm info to %u (rkey=0x%x, rm_addr=0x%lx, rm_size=%lu)\n",
          "Info", conn_id->qp->qp_num, ctx_->buf_mr->rkey, addr, ctx_->rm_size);
 
@@ -490,9 +540,12 @@ int rdma::Transport::handle_connect_request(struct rdma_cm_event *cm_event) {
  */
 int rdma::Transport::handle_disconnected(struct rdma_cm_event *cm_event) {
   int ret;
-  struct rdma_cm_event *event;
   struct rdma_cm_id *conn_id = cm_event->id;
-  rdma_ack_cm_event(cm_event);
+  ret = rdma_ack_cm_event(cm_event);
+  if (ret) {
+    VERB_ERR("rdma_ack_cm_event", ret);
+    return ret;
+  }
 
   uint32_t qp_num = conn_id->qp->qp_num;
   if (conn_id->qp && conn_id->qp->state == IBV_QPS_RTS) {
@@ -501,20 +554,48 @@ int rdma::Transport::handle_disconnected(struct rdma_cm_event *cm_event) {
       VERB_ERR("rdma_disconnect", ret);
       return ret;
     }
-    ret =
-        get_cm_event(ctx_->event_channel, RDMA_CM_EVENT_TIMEWAIT_EXIT, &event);
-    if (ret) {
-      VERB_ERR("get_cm_event", ret);
-      return ret;
-    }
-    if (cm_event != nullptr && (ret = rdma_ack_cm_event(cm_event))) {
-      VERB_ERR("rdma_ack_cm_event", ret);
-      return ret;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      assert(ctx_->id_states[qp_num_2_conn_idx[qp_num]] =
+                 RDMA_ID_STATE_CONNECTED);
+      ctx_->id_states[qp_num_2_conn_idx[qp_num]] = RDMA_ID_STATE_DISCONNECTED;
+      printf("[%-16s] disconnected %u\n", "Connection", qp_num);
     }
   }
-  rdma_destroy_qp(conn_id);
-  rdma_destroy_id(conn_id);
-  printf("[%-16s] disconnected! (qp_num=%u)\n", "Connection", qp_num);
+
+  return 0;
+}
+
+/*
+ * Function: handle_timewait_exit
+ *
+ */
+int rdma::Transport::handle_timewait_exit(struct rdma_cm_event *cm_event) {
+  int ret;
+  struct rdma_cm_id *conn_id = cm_event->id;
+  ret = rdma_ack_cm_event(cm_event);
+  if (ret) {
+    VERB_ERR("rdma_ack_cm_event", ret);
+    return ret;
+  }
+
+  uint32_t qp_num = conn_id->qp->qp_num;
+  size_t conn_idx = qp_num_2_conn_idx[qp_num];
+  {
+    assert(ctx_->id_states[qp_num_2_conn_idx[qp_num]] =
+               RDMA_ID_STATE_DISCONNECTED);
+    std::lock_guard<std::mutex> lock(mutex_);
+    ctx_->id_states[conn_idx] = RDMA_ID_STATE_TIMEWAIT_EXITED;
+    rdma_destroy_qp(conn_id);
+    ctx_->id_states[conn_idx] = RDMA_ID_STATE_QP_DESTROYED;
+    rdma_destroy_id(conn_id);
+    ctx_->id_states[conn_idx] = RDMA_ID_STATE_ID_DESTROYED;
+    printf("[%-16s] disconnected! (qp_num=%u)\n", "Connection", qp_num);
+    ctx_->id_states[conn_idx] = RDMA_ID_STATE_FREE;
+    ctx_->conn_ids[conn_idx] = nullptr;
+    qp_num_2_conn_idx.erase(qp_num);
+    printf("[%-16s] freed! (qp_num=%u)\n", "Connection", qp_num);
+  }
 
   return 0;
 }
@@ -535,7 +616,8 @@ int rdma::Transport::read_rm(rdma_cm_id *cm_id, char *lm_addr, size_t lm_length,
     VERB_ERR("rdma_post_read", ret);
     return ret;
   }
-  // printf("[%-16s] post read:  rkey=0x%x, rm_addr=0x%lx, length=%lu\n", "Info",
+  // printf("[%-16s] post read:  rkey=0x%x, rm_addr=0x%lx, length=%lu\n",
+  // "Info",
   //        rm_rkey, rm_addr, lm_length);
 
   do {
@@ -570,7 +652,8 @@ int rdma::Transport::write_rm(rdma_cm_id *cm_id, char *lm_addr,
     VERB_ERR("rdma_post_write", ret);
     return ret;
   }
-  // printf("[%-16s] post write: rkey=0x%x, rm_addr=0x%lx, length=%lu\n", "Info",
+  // printf("[%-16s] post write: rkey=0x%x, rm_addr=0x%lx, length=%lu\n",
+  // "Info",
   //        rm_rkey, rm_addr, lm_length);
 
   do {
