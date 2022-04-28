@@ -16,14 +16,18 @@
 - [ ] 5. implement the remote memory logic for LRUCache.
   - [x] LRUHandle. modify its fields to support below operations
   - [x] rm_lru. implement rm_lru related methods (the simplest lru)
-  - [ ] eviction. 
+  - [x] eviction. 
     - [x] evict local block to remote if exceeding local memory
-    - [buggy] evict remtote block if exceeding total memory
-      - [ ] shard remote memory so that any shard can control its own rm (otherwise, it may fail when allocate a space but memory is framented by other shards)
+    - [x] evict remtote block if exceeding total memory
+      - [x] shard remote memory so that any shard can control its own rm (otherwise, it may fail when allocate a space but memory is framented by other shards)
   - [x] fetch if remote
+  - [ ] statistics about the remote memory
+    - [ ] count of hit in rm/hit in lm
+    - [ ] time of hit in rm/hit in lm (or rm overhead)
 
 ### YCSB
 
 - [ ] support configuration of using `d_lru_cache` or normal `lru_cache`
 - [x] support configuration of using `rm_ratio`
 - [x] modify value generator to use transformation of key, for easier verification of the correctness.
+
