@@ -85,8 +85,10 @@ class RocksdbDB : public DB {
     // try to print stats
     if (should_print) {
       printf("Block cache entry stats(count,bytes,percent): "
-             "DataBlock(%s, %s, %s), IndexBlock(%s, %s, %s), FilterBlock(%s, %s, %s), Misc(%s, %s, %s)\n",
+             "DataBlock(%s, %s, %s), LMDataBlock(_, %s, %s), RMDataBlock(_, %s, %s), IndexBlock(%s, %s, %s), FilterBlock(%s, %s, %s), Misc(%s, %s, %s)\n",
              cache_status["count.data-block"].c_str(), cache_status["bytes.data-block"].c_str(), cache_status["percent.data-block"].c_str(),
+             cache_status["bytes.lm-data-block"].c_str(), cache_status["percent.lm-data-block"].c_str(),
+             cache_status["bytes.rm-data-block"].c_str(), cache_status["percent.rm-data-block"].c_str(),
              cache_status["count.index-block"].c_str(), cache_status["bytes.index-block"].c_str(), cache_status["percent.index-block"].c_str(),
              cache_status["count.filter-block"].c_str(), cache_status["bytes.filter-block"].c_str(), cache_status["percent.filter-block"].c_str(),
              cache_status["count.misc"].c_str(), cache_status["bytes.misc"].c_str(), cache_status["percent.misc"].c_str());

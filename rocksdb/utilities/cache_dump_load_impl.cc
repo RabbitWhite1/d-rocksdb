@@ -7,8 +7,6 @@
 #include "table/block_based/block_based_table_reader.h"
 #ifndef ROCKSDB_LITE
 
-#include "utilities/cache_dump_load_impl.h"
-
 #include "cache/cache_entry_roles.h"
 #include "file/writable_file_writer.h"
 #include "port/lang.h"
@@ -17,6 +15,7 @@
 #include "rocksdb/utilities/ldb_cmd.h"
 #include "table/format.h"
 #include "util/crc32c.h"
+#include "utilities/cache_dump_load_impl.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -110,10 +109,10 @@ bool CacheDumperImpl::ShouldFilterOut(const Slice& key) {
 // Cache::ApplyToAllEntries. In this callback function, we will get the block
 // type, decide if the block needs to be dumped based on the filter, and write
 // the block through the provided writer.
-std::function<void(const Slice&, void*, size_t, Cache::DeleterFn)>
+std::function<void(const Slice&, void*, size_t, bool, Cache::DeleterFn)>
 CacheDumperImpl::DumpOneBlockCallBack() {
   return [&](const Slice& key, void* value, size_t /*charge*/,
-             Cache::DeleterFn deleter) {
+             bool /*is_local*/, Cache::DeleterFn deleter) {
     // Step 1: get the type of the block from role_map_
     auto e = role_map_.find(deleter);
     CacheEntryRole role;

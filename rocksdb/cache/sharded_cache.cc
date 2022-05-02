@@ -159,7 +159,7 @@ size_t ShardedCache::GetPinnedUsage() const {
 
 void ShardedCache::ApplyToAllEntries(
     const std::function<void(const Slice& key, void* value, size_t charge,
-                             DeleterFn deleter)>& callback,
+                             bool is_local, DeleterFn deleter)>& callback,
     const ApplyToAllEntriesOptions& opts) {
   uint32_t num_shards = GetNumShards();
   // Iterate over part of each shard, rotating between shards, to

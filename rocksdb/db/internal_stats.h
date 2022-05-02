@@ -363,7 +363,11 @@ class InternalStats {
     uint64_t cache_capacity = 0;
     std::string cache_id;
     std::array<uint64_t, kNumCacheEntryRoles> total_charges;
+    std::array<uint64_t, kNumCacheEntryRoles> lm_total_charges;
+    std::array<uint64_t, kNumCacheEntryRoles> rm_total_charges;
     std::array<size_t, kNumCacheEntryRoles> entry_counts;
+    std::array<size_t, kNumCacheEntryRoles> lm_entry_counts;
+    std::array<size_t, kNumCacheEntryRoles> rm_entry_counts;
     uint32_t collection_count = 0;
     uint32_t copies_of_last_collection = 0;
     uint64_t last_start_time_micros_ = 0;
@@ -377,7 +381,7 @@ class InternalStats {
     }
 
     void BeginCollection(Cache*, SystemClock*, uint64_t start_time_micros);
-    std::function<void(const Slice&, void*, size_t, Cache::DeleterFn)>
+    std::function<void(const Slice&, void*, size_t, bool, Cache::DeleterFn)>
     GetEntryCallback();
     void EndCollection(Cache*, SystemClock*, uint64_t end_time_micros);
     void SkippedCollection();

@@ -622,10 +622,11 @@ void InternalStats::CollectCacheEntryStats(bool foreground) {
                                              min_interval_factor);
 }
 
-std::function<void(const Slice&, void*, size_t, Cache::DeleterFn)>
+std::function<void(const Slice&, void*, size_t, bool, Cache::DeleterFn)>
 InternalStats::CacheEntryRoleStats::GetEntryCallback() {
-  return [&](const Slice& /*key*/, void* /*value*/, size_t charge,
+  return [&](const Slice& /*key*/, void* /*value*/, size_t charge, bool is_local,
              Cache::DeleterFn deleter) {
+    // `is_local` is only for `DLRUCache`; for others, it should always be true
     auto e = role_map_.find(deleter);
     size_t role_idx;
     if (e == role_map_.end()) {
@@ -635,6 +636,13 @@ InternalStats::CacheEntryRoleStats::GetEntryCallback() {
     }
     entry_counts[role_idx]++;
     total_charges[role_idx] += charge;
+    if (is_local) {
+      lm_entry_counts[role_idx]++;
+      lm_total_charges[role_idx] += charge;
+    } else {
+      rm_entry_counts[role_idx]++;
+      rm_total_charges[role_idx] += charge;
+    }
   };
 }
 
@@ -706,6 +714,14 @@ void InternalStats::CacheEntryRoleStats::ToMap(
     v["bytes." + role] = ROCKSDB_NAMESPACE::ToString(total_charges[i]);
     v["percent." + role] =
         ROCKSDB_NAMESPACE::ToString(100.0 * total_charges[i] / cache_capacity);
+    v["count.lm-" + role] = ROCKSDB_NAMESPACE::ToString(lm_entry_counts[i]);
+    v["bytes.lm-" + role] = ROCKSDB_NAMESPACE::ToString(lm_total_charges[i]);
+    v["percent.lm-" + role] =
+        ROCKSDB_NAMESPACE::ToString(100.0 * lm_total_charges[i] / cache_capacity);
+    v["count.rm-" + role] = ROCKSDB_NAMESPACE::ToString(rm_entry_counts[i]);
+    v["bytes.rm-" + role] = ROCKSDB_NAMESPACE::ToString(rm_total_charges[i]);
+    v["percent.rm-" + role] =
+        ROCKSDB_NAMESPACE::ToString(100.0 * rm_total_charges[i] / cache_capacity);
   }
 }
 

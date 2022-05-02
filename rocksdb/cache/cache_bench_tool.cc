@@ -456,7 +456,7 @@ class CacheBench {
       total_charge = 0;
       total_entry_count = 0;
       deleters.clear();
-      auto fn = [&](const Slice& key, void* /*value*/, size_t charge,
+      auto fn = [&](const Slice& key, void* /*value*/, size_t charge, bool,
                     Cache::DeleterFn deleter) {
         total_key_size += key.size();
         total_charge += charge;

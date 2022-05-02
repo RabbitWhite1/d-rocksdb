@@ -53,8 +53,19 @@ class CacheShard {
   // completion.
   virtual void ApplyToSomeEntries(
       const std::function<void(const Slice& key, void* value, size_t charge,
-                               DeleterFn deleter)>& callback,
+                               bool is_local, DeleterFn deleter)>& callback,
       uint32_t average_entries_per_lock, uint32_t* state) = 0;
+  // void ApplyToSomeEntries(
+  //     const std::function<void(const Slice& key, void* value, size_t charge,
+  //                              DeleterFn deleter)>& callback,
+  //     uint32_t average_entries_per_lock, uint32_t* state) {
+  //   return ApplyToSomeEntries(
+  //       [callback](const Slice& key, void* value, size_t charge, bool,
+  //                  DeleterFn deleter) {
+  //         return callback(key, value, charge, deleter);
+  //       },
+  //       average_entries_per_lock, state);
+  // }
   virtual void EraseUnRefEntries() = 0;
   virtual std::string GetPrintableOptions() const { return ""; }
   void set_metadata_charge_policy(
@@ -108,7 +119,7 @@ class ShardedCache : public Cache {
   virtual size_t GetPinnedUsage() const override;
   virtual void ApplyToAllEntries(
       const std::function<void(const Slice& key, void* value, size_t charge,
-                               DeleterFn deleter)>& callback,
+                               bool is_local, DeleterFn deleter)>& callback,
       const ApplyToAllEntriesOptions& opts) override;
   virtual void EraseUnRefEntries() override;
   virtual std::string GetPrintableOptions() const override;

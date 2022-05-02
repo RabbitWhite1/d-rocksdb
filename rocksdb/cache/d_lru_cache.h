@@ -356,7 +356,7 @@ class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
   virtual size_t GetRMUsage() const;
 
   virtual void ApplyToSomeEntries(
-      const std::function<void(const Slice& key, void* value, size_t charge,
+      const std::function<void(const Slice& key, void* value, size_t charge, bool is_local,
                                DeleterFn deleter)>& callback,
       uint32_t average_entries_per_lock, uint32_t* state) override;
 

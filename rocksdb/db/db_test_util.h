@@ -210,9 +210,7 @@ class SpecialEnv : public EnvWrapper {
       Env::IOPriority GetIOPriority() override {
         return base_->GetIOPriority();
       }
-      bool use_direct_io() const override {
-        return base_->use_direct_io();
-      }
+      bool use_direct_io() const override { return base_->use_direct_io(); }
       Status Allocate(uint64_t offset, uint64_t len) override {
         return base_->Allocate(offset, len);
       }
@@ -819,7 +817,7 @@ class CacheWrapper : public Cache {
 
   void ApplyToAllEntries(
       const std::function<void(const Slice& key, void* value, size_t charge,
-                               DeleterFn deleter)>& callback,
+                               bool is_local, DeleterFn deleter)>& callback,
       const ApplyToAllEntriesOptions& opts) override {
     target_->ApplyToAllEntries(callback, opts);
   }

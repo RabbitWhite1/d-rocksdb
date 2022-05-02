@@ -261,7 +261,7 @@ class SimCacheImpl : public SimCache {
 
   void ApplyToAllEntries(
       const std::function<void(const Slice& key, void* value, size_t charge,
-                               DeleterFn deleter)>& callback,
+                               bool is_local, DeleterFn deleter)>& callback,
       const ApplyToAllEntriesOptions& opts) override {
     cache_->ApplyToAllEntries(callback, opts);
   }

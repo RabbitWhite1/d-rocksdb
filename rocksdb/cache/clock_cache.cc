@@ -25,6 +25,7 @@ std::shared_ptr<Cache> NewClockCache(
 #else
 
 #include <assert.h>
+
 #include <atomic>
 #include <deque>
 
@@ -306,7 +307,7 @@ class ClockCacheShard final : public CacheShard {
   void EraseUnRefEntries() override;
   void ApplyToSomeEntries(
       const std::function<void(const Slice& key, void* value, size_t charge,
-                               DeleterFn deleter)>& callback,
+                               bool is_local, DeleterFn deleter)>& callback,
       uint32_t average_entries_per_lock, uint32_t* state) override;
 
  private:
@@ -428,7 +429,7 @@ size_t ClockCacheShard::GetPinnedUsage() const {
 
 void ClockCacheShard::ApplyToSomeEntries(
     const std::function<void(const Slice& key, void* value, size_t charge,
-                             DeleterFn deleter)>& callback,
+                             bool is_local, DeleterFn deleter)>& callback,
     uint32_t average_entries_per_lock, uint32_t* state) {
   assert(average_entries_per_lock > 0);
   MutexLock lock(&mutex_);
@@ -463,7 +464,7 @@ void ClockCacheShard::ApplyToSomeEntries(
     // holding mutex
     uint32_t flags = handle.flags.load(std::memory_order_relaxed);
     if (InCache(flags)) {
-      callback(handle.key, handle.value, handle.charge, handle.deleter);
+      callback(handle.key, handle.value, handle.charge, true, handle.deleter);
     }
   }
 }

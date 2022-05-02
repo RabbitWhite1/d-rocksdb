@@ -166,7 +166,7 @@ void DLRUCacheShard::EraseUnRefEntries() {
 }
 
 void DLRUCacheShard::ApplyToSomeEntries(
-    const std::function<void(const Slice& key, void* value, size_t charge, 
+    const std::function<void(const Slice& key, void* value, size_t charge, bool is_local,
                              DeleterFn deleter)>& callback,
     uint32_t average_entries_per_lock, uint32_t* state) {
   // The state is essentially going to be the starting hash, which works
@@ -196,7 +196,7 @@ void DLRUCacheShard::ApplyToSomeEntries(
         DeleterFn deleter = h->IsSecondaryCacheCompatible()
                                 ? h->info_.helper->del_cb
                                 : h->info_.deleter;
-        callback(h->key(), h->value, h->charge, deleter);
+        callback(h->key(), h->value, h->charge, h->IsLocal(), deleter);
       },
       index_begin, index_end);
 }

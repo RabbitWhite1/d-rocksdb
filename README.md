@@ -24,6 +24,7 @@
   - [ ] statistics about the remote memory
     - [ ] count of hit in rm/hit in lm
     - [ ] time of hit in rm/hit in lm (or rm overhead)
+    - [x] stats of lm/rm usage (through `GetMapProperty`)
 
 ### YCSB
 

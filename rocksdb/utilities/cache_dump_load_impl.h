@@ -113,7 +113,7 @@ class CacheDumperImpl : public CacheDumper {
                            void* value, size_t len);
   IOStatus WriteFooter();
   bool ShouldFilterOut(const Slice& key);
-  std::function<void(const Slice&, void*, size_t, Cache::DeleterFn)>
+  std::function<void(const Slice&, void*, size_t, bool, Cache::DeleterFn)>
   DumpOneBlockCallBack();
 
   CacheDumpOptions options_;

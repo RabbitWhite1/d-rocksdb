@@ -452,14 +452,14 @@ class Cache {
   // also.
   virtual void ApplyToAllEntries(
       const std::function<void(const Slice& key, void* value, size_t charge,
-                               DeleterFn deleter)>& callback,
+                               bool is_local, DeleterFn deleter)>& callback,
       const ApplyToAllEntriesOptions& opts) = 0;
 
   // DEPRECATED version of above. (Default implementation uses above.)
   virtual void ApplyToAllCacheEntries(void (*callback)(void* value,
                                                        size_t charge),
                                       bool /*thread_safe*/) {
-    ApplyToAllEntries([callback](const Slice&, void* value, size_t charge,
+    ApplyToAllEntries([callback](const Slice&, void* value, size_t charge, bool,
                                  DeleterFn) { callback(value, charge); },
                       {});
   }
