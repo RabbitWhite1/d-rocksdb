@@ -192,11 +192,11 @@ struct DLRUCacheOptions {
 
   DLRUCacheOptions() {}
   DLRUCacheOptions(size_t _capacity, int _num_shard_bits,
-                  bool _strict_capacity_limit, double _high_pri_pool_ratio,
-                  std::shared_ptr<MemoryAllocator> _memory_allocator = nullptr,
-                  bool _use_adaptive_mutex = kDefaultToAdaptiveMutex,
-                  CacheMetadataChargePolicy _metadata_charge_policy =
-                      kDefaultCacheMetadataChargePolicy)
+                   bool _strict_capacity_limit, double _high_pri_pool_ratio,
+                   std::shared_ptr<MemoryAllocator> _memory_allocator = nullptr,
+                   bool _use_adaptive_mutex = kDefaultToAdaptiveMutex,
+                   CacheMetadataChargePolicy _metadata_charge_policy =
+                       kDefaultCacheMetadataChargePolicy)
       : capacity(_capacity),
         num_shard_bits(_num_shard_bits),
         strict_capacity_limit(_strict_capacity_limit),
@@ -216,7 +216,8 @@ struct DLRUCacheOptions {
 // will be at least 512KB and number of shard bits will not exceed 6.
 extern std::shared_ptr<Cache> NewDLRUCache(
     size_t capacity, int num_shard_bits = -1,
-    bool strict_capacity_limit = false, double high_pri_pool_ratio = 0.5, double rm_ratio = 0.0,
+    bool strict_capacity_limit = false, double high_pri_pool_ratio = 0.5,
+    double rm_ratio = 0.0,
     std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
     bool use_adaptive_mutex = kDefaultToAdaptiveMutex,
     CacheMetadataChargePolicy metadata_charge_policy =
@@ -431,8 +432,8 @@ class Cache {
   // memory - call this only if you're shutting down the process.
   // Any attempts of using cache after this call will fail terribly.
   // Always delete the DB object before calling this method!
-  virtual void DisownData(){
-      // default implementation is noop
+  virtual void DisownData() {
+    // default implementation is noop
   }
 
   struct ApplyToAllEntriesOptions {
