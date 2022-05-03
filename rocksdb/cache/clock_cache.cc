@@ -283,7 +283,7 @@ class ClockCacheShard final : public CacheShard {
                         const Cache::CacheItemHelper* /*helper*/,
                         const Cache::CreateCallback& /*create_cb*/,
                         Cache::Priority /*priority*/, bool /*wait*/,
-                        Statistics* /*stats*/) override {
+                        Statistics* /*stats*/, bool* /*from_rm*/) override {
     return Lookup(key, hash);
   }
   bool Release(Cache::Handle* handle, bool /*useful*/,

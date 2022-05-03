@@ -25,6 +25,8 @@ struct ParsedInternalKey;
 // avoids the overhead of frequent ticker stats updates
 struct GetContextStats {
   uint64_t num_cache_hit = 0;
+  uint64_t num_cache_hit_lm = 0;
+  uint64_t num_cache_hit_rm = 0;
   uint64_t num_cache_index_hit = 0;
   uint64_t num_cache_data_hit = 0;
   uint64_t num_cache_filter_hit = 0;

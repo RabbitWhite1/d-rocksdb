@@ -545,7 +545,10 @@ class Cache {
   virtual Handle* Lookup(const Slice& key, const CacheItemHelper* /*helper_cb*/,
                          const CreateCallback& /*create_cb*/,
                          Priority /*priority*/, bool /*wait*/,
-                         Statistics* stats = nullptr) {
+                         Statistics* stats = nullptr, bool* from_rm = nullptr) {
+    if (from_rm != nullptr) {
+      *from_rm = false;
+    }
     return Lookup(key, stats);
   }
 

@@ -78,9 +78,7 @@ extern const uint64_t kBlockBasedTableMagicNumber;
 extern const std::string kHashIndexPrefixesBlock;
 extern const std::string kHashIndexPrefixesMetadataBlock;
 
-BlockBasedTable::~BlockBasedTable() {
-  delete rep_;
-}
+BlockBasedTable::~BlockBasedTable() { delete rep_; }
 
 namespace {
 // Read the block identified by "handle" from "file".
@@ -155,7 +153,7 @@ CacheAllocationPtr CopyBufferToHeap(MemoryAllocator* allocator, Slice& buf) {
 
 void BlockBasedTable::UpdateCacheHitMetrics(BlockType block_type,
                                             GetContext* get_context,
-                                            size_t usage) const {
+                                            size_t usage, bool from_rm) const {
   Statistics* const statistics = rep_->ioptions.stats;
 
   PERF_COUNTER_ADD(block_cache_hit_count, 1);
@@ -165,8 +163,18 @@ void BlockBasedTable::UpdateCacheHitMetrics(BlockType block_type,
   if (get_context) {
     ++get_context->get_context_stats_.num_cache_hit;
     get_context->get_context_stats_.num_cache_bytes_read += usage;
+    if (from_rm == true) {
+      ++get_context->get_context_stats_.num_cache_hit_rm;
+    } else {
+      ++get_context->get_context_stats_.num_cache_hit_lm;
+    }
   } else {
     RecordTick(statistics, BLOCK_CACHE_HIT);
+    if (from_rm == true) {
+      RecordTick(statistics, BLOCK_CACHE_HIT_RM);
+    } else {
+      RecordTick(statistics, BLOCK_CACHE_HIT_LM);
+    }
     RecordTick(statistics, BLOCK_CACHE_BYTES_READ, usage);
   }
 
@@ -360,16 +368,18 @@ Cache::Handle* BlockBasedTable::GetEntryFromCache(
     const Cache::CacheItemHelper* cache_helper,
     const Cache::CreateCallback& create_cb, Cache::Priority priority) const {
   Cache::Handle* cache_handle = nullptr;
+  bool from_rm = false;
   if (cache_tier == CacheTier::kNonVolatileBlockTier) {
-    cache_handle = block_cache->Lookup(key, cache_helper, create_cb, priority,
-                                       wait, rep_->ioptions.statistics.get());
+    cache_handle =
+        block_cache->Lookup(key, cache_helper, create_cb, priority, wait,
+                            rep_->ioptions.statistics.get(), &from_rm);
   } else {
     cache_handle = block_cache->Lookup(key, rep_->ioptions.statistics.get());
   }
 
   if (cache_handle != nullptr) {
     UpdateCacheHitMetrics(block_type, get_context,
-                          block_cache->GetUsage(cache_handle));
+                          block_cache->GetUsage(cache_handle), from_rm);
   } else {
     UpdateCacheMissMetrics(block_type, get_context);
   }

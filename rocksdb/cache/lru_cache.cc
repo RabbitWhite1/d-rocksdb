@@ -36,7 +36,7 @@ LRUHandleTable::~LRUHandleTable() {
       0, uint32_t{1} << length_bits_);
 }
 
-LRUHandle* LRUHandleTable:: Lookup(const Slice& key, uint32_t hash) {
+LRUHandle* LRUHandleTable::Lookup(const Slice& key, uint32_t hash) {
   return *FindPointer(key, hash);
 }
 
@@ -156,8 +156,8 @@ void LRUCacheShard::EraseUnRefEntries() {
 }
 
 void LRUCacheShard::ApplyToSomeEntries(
-    const std::function<void(const Slice& key, void* value, size_t charge, bool is_local,
-                             DeleterFn deleter)>& callback,
+    const std::function<void(const Slice& key, void* value, size_t charge,
+                             bool is_local, DeleterFn deleter)>& callback,
     uint32_t average_entries_per_lock, uint32_t* state) {
   // The state is essentially going to be the starting hash, which works
   // nicely even if we resize between calls because we use upper-most
@@ -420,7 +420,7 @@ Cache::Handle* LRUCacheShard::Lookup(
     const Slice& key, uint32_t hash,
     const ShardedCache::CacheItemHelper* helper,
     const ShardedCache::CreateCallback& create_cb, Cache::Priority priority,
-    bool wait, Statistics* stats) {
+    bool wait, Statistics* stats, bool*) {
   LRUHandle* e = nullptr;
   {
     MutexLock l(&mutex_);

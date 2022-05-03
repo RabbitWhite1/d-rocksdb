@@ -116,6 +116,12 @@ void GetContext::ReportCounters() {
   if (get_context_stats_.num_cache_hit > 0) {
     RecordTick(statistics_, BLOCK_CACHE_HIT, get_context_stats_.num_cache_hit);
   }
+  if (get_context_stats_.num_cache_hit_lm > 0) {
+    RecordTick(statistics_, BLOCK_CACHE_HIT_LM, get_context_stats_.num_cache_hit_lm);
+  }
+  if (get_context_stats_.num_cache_hit_rm > 0) {
+    RecordTick(statistics_, BLOCK_CACHE_HIT_RM, get_context_stats_.num_cache_hit_rm);
+  }
   if (get_context_stats_.num_cache_index_hit > 0) {
     RecordTick(statistics_, BLOCK_CACHE_INDEX_HIT,
                get_context_stats_.num_cache_index_hit);

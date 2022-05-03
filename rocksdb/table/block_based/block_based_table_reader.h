@@ -303,7 +303,7 @@ class BlockBasedTable : public TableReader {
   BlockCacheTracer* const block_cache_tracer_;
 
   void UpdateCacheHitMetrics(BlockType block_type, GetContext* get_context,
-                             size_t usage) const;
+                             size_t usage, bool from_rm) const;
   void UpdateCacheMissMetrics(BlockType block_type,
                               GetContext* get_context) const;
 

@@ -331,10 +331,10 @@ class ALIGN_AS(CACHE_LINE_SIZE) LRUCacheShard final : public CacheShard {
                                 const ShardedCache::CacheItemHelper* helper,
                                 const ShardedCache::CreateCallback& create_cb,
                                 ShardedCache::Priority priority, bool wait,
-                                Statistics* stats) override;
+                                Statistics* stats, bool*) override;
   virtual Cache::Handle* Lookup(const Slice& key, uint32_t hash) override {
     return Lookup(key, hash, nullptr, nullptr, Cache::Priority::LOW, true,
-                  nullptr);
+                  nullptr, nullptr);
   }
   virtual bool Release(Cache::Handle* handle, bool /*useful*/,
                        bool force_erase) override {

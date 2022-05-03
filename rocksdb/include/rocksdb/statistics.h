@@ -38,6 +38,8 @@ enum Tickers : uint32_t {
   //                              BLOCK_CACHE_FILTER_HIT +
   //                              BLOCK_CACHE_DATA_HIT;
   BLOCK_CACHE_HIT,
+  BLOCK_CACHE_HIT_LM,
+  BLOCK_CACHE_HIT_RM,
   // # of blocks added to block cache.
   BLOCK_CACHE_ADD,
   // # of failures when adding blocks to block cache.

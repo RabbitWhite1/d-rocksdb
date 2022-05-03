@@ -35,7 +35,7 @@ class CacheShard {
                                 const Cache::CacheItemHelper* helper,
                                 const Cache::CreateCallback& create_cb,
                                 Cache::Priority priority, bool wait,
-                                Statistics* stats) = 0;
+                                Statistics* stats, bool* from_rm) = 0;
   virtual bool Release(Cache::Handle* handle, bool useful,
                        bool force_erase) = 0;
   virtual bool IsReady(Cache::Handle* handle) = 0;
@@ -103,7 +103,8 @@ class ShardedCache : public Cache {
   virtual Handle* Lookup(const Slice& key, Statistics* stats) override;
   virtual Handle* Lookup(const Slice& key, const CacheItemHelper* helper,
                          const CreateCallback& create_cb, Priority priority,
-                         bool wait, Statistics* stats = nullptr) override;
+                         bool wait, Statistics* stats = nullptr,
+                         bool* from_rm = nullptr) override;
   virtual bool Release(Handle* handle, bool useful,
                        bool force_erase = false) override;
   virtual bool IsReady(Handle* handle) override;

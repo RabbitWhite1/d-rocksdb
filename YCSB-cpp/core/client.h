@@ -9,36 +9,40 @@
 #ifndef YCSB_C_CLIENT_H_
 #define YCSB_C_CLIENT_H_
 
-#include <iostream>
-#include <future>
-#include <string>
-#include "db.h"
 #include "core_workload.h"
-#include "utils.h"
 #include "countdown_latch.h"
+#include "db.h"
+#include "utils.h"
+#include <future>
+#include <iostream>
+#include <string>
 
 namespace ycsbc {
 
-inline int ClientThread(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_ops, bool is_loading,
-                        bool init_db, bool cleanup_db, CountDownLatch *latch, std::promise<int> &return_promise, int thread_id,
-                        bool is_warmup, bool* has_warmup_done) {
+inline int ClientThread(ycsbc::DB *db, ycsbc::CoreWorkload *wl,
+                        const int num_ops, bool is_loading, bool init_db,
+                        bool cleanup_db, CountDownLatch *latch,
+                        std::promise<int> &return_promise, int thread_id,
+                        bool is_warmup, bool *has_warmup_done) {
   // Parameters:
   //    db: The database to use.
   //    wl: The workload to use.
-  //    num_ops: The number of operations to run; if it is -1, then we warmup until cache usage is high enough.
+  //    num_ops: The number of operations to run; if it is -1, then we warmup
+  //    until cache usage is high enough.
   if (init_db) {
     db->Init();
   }
-  
+
   int oks = 0;
   int using_num_ops = num_ops;
   if (num_ops == -1) {
     using_num_ops = std::numeric_limits<int>::max();
   }
   if (thread_id == 0) {
-    printf("num_ops: %d, using_num_ops: %d\n", num_ops, using_num_ops);
+    printf("is_warmup=%s, num_ops=%d, using_num_ops=%d\n",
+           is_warmup ? "true" : "false", num_ops, using_num_ops);
   }
-  
+
   for (int i = 0; i < using_num_ops; ++i) {
     if (is_loading) {
       oks += wl->DoInsert(*db);
@@ -59,6 +63,6 @@ inline int ClientThread(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_op
   return oks;
 }
 
-} // ycsbc
+} // namespace ycsbc
 
 #endif // YCSB_C_CLIENT_H_

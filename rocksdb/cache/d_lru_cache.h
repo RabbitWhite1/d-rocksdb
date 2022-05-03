@@ -330,10 +330,10 @@ class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
                                 const ShardedCache::CacheItemHelper* helper,
                                 const ShardedCache::CreateCallback& create_cb,
                                 ShardedCache::Priority priority, bool wait,
-                                Statistics* stats) override;
+                                Statistics* stats, bool* from_rm) override;
   virtual Cache::Handle* Lookup(const Slice& key, uint32_t hash) override {
     return Lookup(key, hash, nullptr, nullptr, Cache::Priority::LOW, true,
-                  nullptr);
+                  nullptr, nullptr);
   }
   virtual bool Release(Cache::Handle* handle, bool /*useful*/,
                        bool force_erase) override {
@@ -356,8 +356,8 @@ class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
   virtual size_t GetRMUsage() const;
 
   virtual void ApplyToSomeEntries(
-      const std::function<void(const Slice& key, void* value, size_t charge, bool is_local,
-                               DeleterFn deleter)>& callback,
+      const std::function<void(const Slice& key, void* value, size_t charge,
+                               bool is_local, DeleterFn deleter)>& callback,
       uint32_t average_entries_per_lock, uint32_t* state) override;
 
   virtual void EraseUnRefEntries() override;
@@ -405,7 +405,7 @@ class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
   // This function is not thread safe - it needs to be executed while
   // holding the mutex_
   void EvictFromLRU(size_t charge,
-                      autovector<DLRUHandle*>* evicted_from_lm_list);
+                    autovector<DLRUHandle*>* evicted_from_lm_list);
   void EvictFromLMLRU(size_t charge,
                       autovector<DLRUHandle*>* evicted_from_lm_list);
   void EvictFromRMLRUAndFreeHandle(size_t charge);
