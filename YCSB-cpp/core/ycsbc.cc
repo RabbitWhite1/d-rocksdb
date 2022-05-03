@@ -227,7 +227,7 @@ int main(const int argc, const char *argv[]) {
     printf("\033[1;31mStart doing the required transactions! (%d ops)\033[0m\n", total_ops);
     printf("Press any key to continue...\n");
     fflush(stdout);
-    // getchar();
+    getchar();
     DoTransaction(total_ops, num_threads, measurements, status_db, show_status,
                   status_interval, dbs, wl, do_load, /*is_warmup=*/false);
   }
@@ -378,7 +378,7 @@ void DoTransaction(const int total_ops, const int num_threads,
     if (is_warmup && total_ops == -1) {
       thread_ops = -1;
     } else {
-      int thread_ops = total_ops / num_threads;
+      thread_ops = total_ops / num_threads;
       if (i < total_ops % num_threads) {
         thread_ops++;
       }

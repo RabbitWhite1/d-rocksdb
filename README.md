@@ -29,6 +29,7 @@
 #### Improved Version 0
 
 - [ ] 1. do not promote an entry every lookup.
+- [ ] 
 
 ### YCSB
 

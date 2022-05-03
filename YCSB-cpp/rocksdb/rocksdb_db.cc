@@ -427,7 +427,6 @@ DB::Status RocksdbDB::ReadSingle(const std::string &table, const std::string &ke
   std::string data;
   rocksdb::ReadOptions read_options = rocksdb::ReadOptions();
   
-  // read_options.fill_cache = false;
   rocksdb::Status s = db_->Get(read_options, key, &data);
   if (s.IsNotFound()) {
     return kNotFound;
