@@ -195,7 +195,7 @@ if __name__ == '__main__':
         workload = 'c'
         operationcount = 20000000
         cache_size = 4*1024**3
-        rm_ratio = 0.01
+        rm_ratio = 0.0
         # cache_size = 256*1024**2
         # rm_ratio = 0.0
         min_write_buffer_number_to_merge = max_write_buffer_number - 2

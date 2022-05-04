@@ -30,6 +30,12 @@
 
 - [x] try to treat remote memory as blocks, i.e., only allocate a block for each cache block (here is an assumption that the block size can always be fit in a cache)
 
+#### Improved Version v2.0.0
+
+- [ ] modify rdma_transport to support async read/write
+- [ ] modify rdma_transport to support qp pool (avoid contention)
+- [ ] overlap rdma read/write as much as possible
+
 ### YCSB
 
 - [ ] support configuration of using `d_lru_cache` or normal `lru_cache`

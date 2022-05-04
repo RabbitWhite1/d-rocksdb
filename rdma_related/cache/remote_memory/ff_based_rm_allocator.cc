@@ -1,11 +1,14 @@
-#include "cache/remote_memory/rm_allocator.h"
+#include "cache/remote_memory/ff_based_rm_allocator.h"
 
 #include <cassert>
 
 namespace ROCKSDB_NAMESPACE {
 
-RemoteMemoryAllocator::RemoteMemoryAllocator(uint64_t addr, size_t size)
-    : rm_addr_(addr), rm_size_(size) {
+FFBasedRemoteMemoryAllocator::FFBasedRemoteMemoryAllocator() {}
+
+void FFBasedRemoteMemoryAllocator::init(uint64_t addr, size_t size) {
+  rm_addr_ = addr;
+  rm_size_ = size;
   head_ = (RMRegion *)malloc(sizeof(RMRegion));
   head_->addr = rm_addr_;
   head_->size = rm_size_;
@@ -17,11 +20,11 @@ RemoteMemoryAllocator::RemoteMemoryAllocator(uint64_t addr, size_t size)
   free_head_ = head_;
 }
 
-RemoteMemoryAllocator::~RemoteMemoryAllocator() {
+FFBasedRemoteMemoryAllocator::~FFBasedRemoteMemoryAllocator() {
   // TODO: free all regions
 }
 
-struct RMRegion *RemoteMemoryAllocator::split_and_use_region(
+struct RMRegion *FFBasedRemoteMemoryAllocator::split_and_use_region(
     RMRegion *region, size_t first_size) {
   // TODO: move this method outside to RemoteMemory (which is more convenient to
   // manager the linked list) return the possible new free region, which is also
@@ -55,7 +58,7 @@ struct RMRegion *RemoteMemoryAllocator::split_and_use_region(
   return new_region;
 }
 
-uint64_t RemoteMemoryAllocator::rmalloc(size_t size) {
+RMRegion *FFBasedRemoteMemoryAllocator::rmalloc(size_t size) {
   uint64_t allocated_addr = -1;
   RMRegion *free_region = nullptr;
   size_t free_region_size = 0;
@@ -77,8 +80,11 @@ uint64_t RemoteMemoryAllocator::rmalloc(size_t size) {
         if (free_region == free_head_) {
           free_head_ = free_region->next_free;
         } else {
+          assert(free_region->prev_free != nullptr);
           free_region->prev_free->next_free = free_region->next_free;
-          free_region->next_free->prev_free = free_region->prev_free;
+          if (free_region->next_free) {
+            free_region->next_free->prev_free = free_region->prev_free;
+          }
         }
         free_region->next_free = nullptr;
         free_region->prev_free = nullptr;
@@ -87,21 +93,22 @@ uint64_t RemoteMemoryAllocator::rmalloc(size_t size) {
       free_region = free_region->next_free;
     }
     if (free_region == nullptr) {
-      return NOSPACE;
+      return nullptr;
     }
     // printf(
     //     "[%-16s] allocated ([0x%lx, 0x%lx), size=0x%lx) from region([0x%lx, "
     //     "0x%lx), size=0x%lx)\n",
-    //     "Info", allocated_addr, allocated_addr + size, size, free_region->addr,
-    //     free_region->addr + free_region_size, free_region_size);
+    //     "Info", allocated_addr, allocated_addr + size, size,
+    //     free_region->addr, free_region->addr + free_region_size,
+    //     free_region_size);
     assert(allocated_addr == free_region->addr && size == free_region->size);
-    addr_to_region_.insert({allocated_addr, free_region});
   }
 
-  return allocated_addr;
+  return free_region;
 }
 
-RMRegion *RemoteMemoryAllocator::extract_from_free_list(RMRegion *region) {
+RMRegion *FFBasedRemoteMemoryAllocator::extract_from_free_list(
+    RMRegion *region) {
   if (region->prev_free) {
     region->prev_free->next_free = region->next_free;
   }
@@ -117,7 +124,7 @@ RMRegion *RemoteMemoryAllocator::extract_from_free_list(RMRegion *region) {
   return region;
 }
 
-RMRegion *RemoteMemoryAllocator::prepend_free(RMRegion *region) {
+RMRegion *FFBasedRemoteMemoryAllocator::prepend_free(RMRegion *region) {
   region->next_free = free_head_;
   region->prev_free = nullptr;
   if (free_head_) {
@@ -127,10 +134,9 @@ RMRegion *RemoteMemoryAllocator::prepend_free(RMRegion *region) {
   return region;
 }
 
-size_t RemoteMemoryAllocator::rmfree(uint64_t addr) {
+size_t FFBasedRemoteMemoryAllocator::rmfree(RMRegion *region) {
   // printf("[%-16s] free 0x%lx\n", "Info", addr);
   std::lock_guard<std::mutex> lock(mutex_);
-  RMRegion *region = addr_to_region_.at(addr);
   size_t size_to_free = region->size;
   // try to merge prev region if free
   if (region->prev != nullptr and region->prev->is_free) {
@@ -158,13 +164,11 @@ size_t RemoteMemoryAllocator::rmfree(uint64_t addr) {
   region->is_free = true;
 
   prepend_free(region);
-  size_t num_removed = addr_to_region_.erase(addr);
-  assert(num_removed == 1);
 
   return size_to_free;
 }
 
-void RemoteMemoryAllocator::print_size_info() {
+void FFBasedRemoteMemoryAllocator::print_size_info() {
   size_t total_size = 0;
   size_t free_size = 0;
   RMRegion *region = head_;
@@ -178,7 +182,7 @@ void RemoteMemoryAllocator::print_size_info() {
   printf("free_size/total_size=%lu/%lu\n", free_size, total_size);
 }
 
-void RemoteMemoryAllocator::print(bool only_free) {
+void FFBasedRemoteMemoryAllocator::print(bool only_free) {
   // print region list
   RMRegion *region;
   if (not only_free) {
