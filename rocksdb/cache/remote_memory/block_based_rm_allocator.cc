@@ -61,8 +61,8 @@ struct RMRegion *BlockBasedRemoteMemoryAllocator::split_and_use_region(
   return new_region;
 }
 
-uint64_t BlockBasedRemoteMemoryAllocator::rmalloc(size_t size) {
-  assert (size < block_size_);
+RMRegion *BlockBasedRemoteMemoryAllocator::rmalloc(size_t size) {
+  assert(size < block_size_);
 
   uint64_t allocated_addr = -1;
   RMRegion *free_region = nullptr;
@@ -74,7 +74,8 @@ uint64_t BlockBasedRemoteMemoryAllocator::rmalloc(size_t size) {
     while (free_region != nullptr) {
       if (block_size_ < (free_region_size = free_region->size)) {
         allocated_addr = free_region->addr;
-        RMRegion *new_free_region = split_and_use_region(free_region, block_size_);
+        RMRegion *new_free_region =
+            split_and_use_region(free_region, block_size_);
         if (free_region == free_head_) {
           free_head_ = new_free_region;
         }
@@ -98,7 +99,7 @@ uint64_t BlockBasedRemoteMemoryAllocator::rmalloc(size_t size) {
       free_region = free_region->next_free;
     }
     if (free_region == nullptr) {
-      return NOSPACE;
+      return nullptr;
     }
     // printf(
     //     "[%-16s] allocated ([0x%lx, 0x%lx), size=0x%lx) from region([0x%lx, "
@@ -106,11 +107,11 @@ uint64_t BlockBasedRemoteMemoryAllocator::rmalloc(size_t size) {
     //     "Info", allocated_addr, allocated_addr + size, size,
     //     free_region->addr, free_region->addr + free_region_size,
     //     free_region_size);
-    assert(allocated_addr == free_region->addr && block_size_ == free_region->size);
-    addr_to_region_.insert({allocated_addr, free_region});
+    assert(allocated_addr == free_region->addr &&
+           block_size_ == free_region->size);
   }
 
-  return allocated_addr;
+  return free_region;
 }
 
 RMRegion *BlockBasedRemoteMemoryAllocator::extract_from_free_list(
@@ -140,10 +141,9 @@ RMRegion *BlockBasedRemoteMemoryAllocator::prepend_free(RMRegion *region) {
   return region;
 }
 
-size_t BlockBasedRemoteMemoryAllocator::rmfree(uint64_t addr) {
+size_t BlockBasedRemoteMemoryAllocator::rmfree(RMRegion *region) {
   // printf("[%-16s] free 0x%lx\n", "Info", addr);
   std::lock_guard<std::mutex> lock(mutex_);
-  RMRegion *region = addr_to_region_.at(addr);
   size_t size_to_free = region->size;
   // try to merge prev region if free
   if (region->prev != nullptr and region->prev->is_free) {
@@ -171,8 +171,6 @@ size_t BlockBasedRemoteMemoryAllocator::rmfree(uint64_t addr) {
   region->is_free = true;
 
   prepend_free(region);
-  size_t num_removed = addr_to_region_.erase(addr);
-  assert(num_removed == 1);
 
   return size_to_free;
 }

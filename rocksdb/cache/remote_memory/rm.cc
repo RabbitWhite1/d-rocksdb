@@ -15,9 +15,9 @@ RemoteMemory::RemoteMemory(RemoteMemoryAllocator *rm_allocator,
   allocator_->init(ctx->rm_addr, ctx->rm_size);
 }
 
-uint64_t RemoteMemory::rmalloc(size_t size) {
-  uint64_t rm_addr = allocator_->rmalloc(size);
-  return rm_addr;
+RMRegion *RemoteMemory::rmalloc(size_t size) {
+  RMRegion *rm_region = allocator_->rmalloc(size);
+  return rm_region;
 }
 
 void RemoteMemory::print() {
@@ -30,10 +30,10 @@ RemoteMemory::~RemoteMemory() {
   delete transport_;
 }
 
-void RemoteMemory::rmfree(uint64_t addr) { allocator_->rmfree(addr); }
+void RemoteMemory::rmfree(RMRegion *rm_region) { allocator_->rmfree(rm_region); }
 
-void RemoteMemory::rmfree(uint64_t addr, size_t size) {
-  size_t freed_size = allocator_->rmfree(addr);
+void RemoteMemory::rmfree(RMRegion *rm_region, size_t size) {
+  size_t freed_size = allocator_->rmfree(rm_region);
   assert(freed_size == size);
 }
 

@@ -241,7 +241,6 @@ int rdma::Transport::init_resources(struct rdma_addrinfo *rai) {
  * This function cleans up resources used by the application
  */
 void rdma::Transport::destroy_resources() {
-  printf("destroy_resources\n");
   int i;
   if (ctx_->conn_ids && not ctx_->server) {
     for (i = 0; i < ctx_->qp_count; i++) {

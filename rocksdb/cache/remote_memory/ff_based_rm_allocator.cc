@@ -58,7 +58,7 @@ struct RMRegion *FFBasedRemoteMemoryAllocator::split_and_use_region(
   return new_region;
 }
 
-uint64_t FFBasedRemoteMemoryAllocator::rmalloc(size_t size) {
+RMRegion *FFBasedRemoteMemoryAllocator::rmalloc(size_t size) {
   uint64_t allocated_addr = -1;
   RMRegion *free_region = nullptr;
   size_t free_region_size = 0;
@@ -93,7 +93,7 @@ uint64_t FFBasedRemoteMemoryAllocator::rmalloc(size_t size) {
       free_region = free_region->next_free;
     }
     if (free_region == nullptr) {
-      return NOSPACE;
+      return nullptr;
     }
     // printf(
     //     "[%-16s] allocated ([0x%lx, 0x%lx), size=0x%lx) from region([0x%lx, "
@@ -102,10 +102,9 @@ uint64_t FFBasedRemoteMemoryAllocator::rmalloc(size_t size) {
     //     free_region->addr, free_region->addr + free_region_size,
     //     free_region_size);
     assert(allocated_addr == free_region->addr && size == free_region->size);
-    addr_to_region_.insert({allocated_addr, free_region});
   }
 
-  return allocated_addr;
+  return free_region;
 }
 
 RMRegion *FFBasedRemoteMemoryAllocator::extract_from_free_list(
@@ -135,10 +134,9 @@ RMRegion *FFBasedRemoteMemoryAllocator::prepend_free(RMRegion *region) {
   return region;
 }
 
-size_t FFBasedRemoteMemoryAllocator::rmfree(uint64_t addr) {
+size_t FFBasedRemoteMemoryAllocator::rmfree(RMRegion *region) {
   // printf("[%-16s] free 0x%lx\n", "Info", addr);
   std::lock_guard<std::mutex> lock(mutex_);
-  RMRegion *region = addr_to_region_.at(addr);
   size_t size_to_free = region->size;
   // try to merge prev region if free
   if (region->prev != nullptr and region->prev->is_free) {
@@ -166,8 +164,6 @@ size_t FFBasedRemoteMemoryAllocator::rmfree(uint64_t addr) {
   region->is_free = true;
 
   prepend_free(region);
-  size_t num_removed = addr_to_region_.erase(addr);
-  assert(num_removed == 1);
 
   return size_to_free;
 }

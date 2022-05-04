@@ -1,11 +1,11 @@
 #pragma once
 
+#include <atomic>
 #include <cassert>
 #include <iostream>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
-#include <atomic>
 
 #include "cache/remote_memory/rm_allocator.h"
 #include "rocksdb/rocksdb_namespace.h"
@@ -22,8 +22,6 @@ class FFBasedRemoteMemoryAllocator : public RemoteMemoryAllocator {
   RMRegion *head_;
   RMRegion *free_head_;
 
-  std::unordered_map<uint64_t, RMRegion *> addr_to_region_;
-
   RMRegion *split_and_use_region(RMRegion *region, size_t first_size);
   RMRegion *extract_from_free_list(RMRegion *region);
   RMRegion *prepend_free(RMRegion *region);
@@ -37,8 +35,8 @@ class FFBasedRemoteMemoryAllocator : public RemoteMemoryAllocator {
   ~FFBasedRemoteMemoryAllocator();
 
   void init(uint64_t addr, size_t size);
-  uint64_t rmalloc(size_t size);
-  size_t rmfree(uint64_t addr);
+  RMRegion *rmalloc(size_t size);
+  size_t rmfree(RMRegion *region);
   void print_size_info();
   void print(bool only_free = false);
 };

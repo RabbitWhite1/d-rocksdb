@@ -361,7 +361,7 @@ void DLRUCacheShard::EvictFromRMLRUAndFreeHandle(size_t charge) {
   do {
     // try to allocate and see if rm has enough space
     {
-      uint64_t rm_addr = remote_memory_->rmalloc(charge);
+      RMRegion *rm_addr = remote_memory_->rmalloc(charge);
       if (rm_addr != 0) {
         remote_memory_->rmfree(rm_addr);
         break;
@@ -380,7 +380,7 @@ void DLRUCacheShard::EvictFromRMLRUAndFreeHandle(size_t charge) {
     assert(rm_usage_ >= old_total_charge);
     rm_usage_ -= old_total_charge;
     assert(old->IsLocal() == false);
-    remote_memory_->rmfree((uint64_t)old->value);
+    remote_memory_->rmfree((RMRegion *)old->value);
     old->value = nullptr;
     old->Free();
     ++num_evicted;
@@ -395,14 +395,15 @@ void DLRUCacheShard::MoveValueToRM(DLRUHandle* e) {
   assert(e->info_.helper && "if using rm, should use helper with size_cb");
   // e->slice_size = e->info_.helper->size_cb(e->value);
   e->slice_size = reinterpret_cast<Block*>(e->value)->size();
-  uint64_t rm_addr = remote_memory_->rmalloc(e->slice_size);
+  RMRegion *rm_region = remote_memory_->rmalloc(e->slice_size);
+  uint64_t rm_addr = rm_region->addr;
   assert(rm_addr > 0 && "should be able to allocate enough memory");
   // TODO: the `reinterpret_cast` is walkaroung. should use helper function.
   remote_memory_->write(rm_addr,
                         (void*)(reinterpret_cast<Block*>(e->value)->data()),
                         e->slice_size);
   e->FreeValue();
-  e->value = (void*)rm_addr;
+  e->value = (void*)rm_region;
 }
 
 void DLRUCacheShard::FetchValueFromRM(
@@ -410,7 +411,8 @@ void DLRUCacheShard::FetchValueFromRM(
   assert(e->InCache());
   assert(!e->IsLocal());
   assert(remote_memory_);
-  uint64_t rm_addr = (uint64_t)e->value;
+  RMRegion *rm_region = (RMRegion *)e->value;
+  uint64_t rm_addr = rm_region->addr;
   std::unique_ptr<char[]> buf_data(new char[e->slice_size]());
   // printf("reading from addr=0x%lx, size=%lu\n", rm_addr, e->slice_size);
   remote_memory_->read(rm_addr, buf_data.get(), e->slice_size);
@@ -418,7 +420,7 @@ void DLRUCacheShard::FetchValueFromRM(
   size_t ret_charge = 0;
   Status s = create_cb(buf_data.get(), e->slice_size, &e->value, &ret_charge);
   assert(s.ok());
-  remote_memory_->rmfree(rm_addr);
+  remote_memory_->rmfree(rm_region);
   // printf("free handle(&=%p, rm_addr=%lx, IsLocal=%d)\n", e, rm_addr,
   // e->IsLocal());
 }
@@ -539,7 +541,7 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
             } else {
               assert(rm_usage_ >= old_total_charge);
               rm_usage_ -= old_total_charge;
-              remote_memory_->rmfree((uint64_t)old->value);
+              remote_memory_->rmfree((RMRegion *)old->value);
               old->Free();
             }
           } else {
@@ -727,7 +729,7 @@ bool DLRUCacheShard::Release(Cache::Handle* handle, bool force_erase) {
     if (e->IsLocal()) {
       e->FreeValue();
     } else {
-      remote_memory_->rmfree((uint64_t)e->value);
+      remote_memory_->rmfree((RMRegion *)e->value);
     }
     e->Free();
   }

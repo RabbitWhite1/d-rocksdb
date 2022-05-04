@@ -1,10 +1,10 @@
 #pragma once
 
-#include <iostream>
-#include <unordered_map>
-#include <thread>
-#include <mutex>
 #include <cassert>
+#include <iostream>
+#include <mutex>
+#include <thread>
+#include <unordered_map>
 
 #include "rocksdb/rocksdb_namespace.h"
 
@@ -31,18 +31,17 @@ struct RMRegion {
 };
 
 class RemoteMemoryAllocator {
-
  public:
   enum {
     NOSPACE = 0,
     NUM_STATUS = -1,
   };
 
-  virtual ~RemoteMemoryAllocator() {};
+  virtual ~RemoteMemoryAllocator(){};
 
   virtual void init(uint64_t addr, size_t size) = 0;
-  virtual uint64_t rmalloc(size_t size) = 0;
-  virtual size_t rmfree(uint64_t addr) = 0;
+  virtual RMRegion *rmalloc(size_t size) = 0;
+  virtual size_t rmfree(RMRegion *rm_region) = 0;
   virtual void print_size_info() = 0;
   virtual void print(bool only_free = false) = 0;
 };
