@@ -3,6 +3,7 @@
 #include <iostream>
 
 int main(int argc, char **argv) {
-  std::string server_name("10.0.0.5");
+  assert (argc > 1);
+  std::string server_name(argv[1]);
   rocksdb::RemoteMemoryServer rm_server(server_name);
 }
