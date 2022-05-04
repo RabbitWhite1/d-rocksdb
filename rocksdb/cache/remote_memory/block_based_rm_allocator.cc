@@ -1,11 +1,17 @@
-#include "cache/remote_memory/rm_allocator.h"
+#include "cache/remote_memory/block_based_rm_allocator.h"
 
 #include <cassert>
 
 namespace ROCKSDB_NAMESPACE {
 
-RemoteMemoryAllocator::RemoteMemoryAllocator(uint64_t addr, size_t size)
-    : rm_addr_(addr), rm_size_(size) {
+BlockBasedRemoteMemoryAllocator::BlockBasedRemoteMemoryAllocator(
+    size_t block_size) {
+  block_size_ = block_size;
+}
+
+void BlockBasedRemoteMemoryAllocator::init(uint64_t addr, size_t size) {
+  rm_addr_ = addr;
+  rm_size_ = size;
   head_ = (RMRegion *)malloc(sizeof(RMRegion));
   head_->addr = rm_addr_;
   head_->size = rm_size_;
@@ -17,11 +23,11 @@ RemoteMemoryAllocator::RemoteMemoryAllocator(uint64_t addr, size_t size)
   free_head_ = head_;
 }
 
-RemoteMemoryAllocator::~RemoteMemoryAllocator() {
+BlockBasedRemoteMemoryAllocator::~BlockBasedRemoteMemoryAllocator() {
   // TODO: free all regions
 }
 
-struct RMRegion *RemoteMemoryAllocator::split_and_use_region(
+struct RMRegion *BlockBasedRemoteMemoryAllocator::split_and_use_region(
     RMRegion *region, size_t first_size) {
   // TODO: move this method outside to RemoteMemory (which is more convenient to
   // manager the linked list) return the possible new free region, which is also
@@ -55,7 +61,9 @@ struct RMRegion *RemoteMemoryAllocator::split_and_use_region(
   return new_region;
 }
 
-uint64_t RemoteMemoryAllocator::rmalloc(size_t size) {
+uint64_t BlockBasedRemoteMemoryAllocator::rmalloc(size_t size) {
+  assert (size < block_size_);
+
   uint64_t allocated_addr = -1;
   RMRegion *free_region = nullptr;
   size_t free_region_size = 0;
@@ -64,20 +72,20 @@ uint64_t RemoteMemoryAllocator::rmalloc(size_t size) {
   {
     free_region = free_head_;
     while (free_region != nullptr) {
-      if (size < (free_region_size = free_region->size)) {
+      if (block_size_ < (free_region_size = free_region->size)) {
         allocated_addr = free_region->addr;
-        RMRegion *new_free_region = split_and_use_region(free_region, size);
+        RMRegion *new_free_region = split_and_use_region(free_region, block_size_);
         if (free_region == free_head_) {
           free_head_ = new_free_region;
         }
         break;
-      } else if (size == free_region->size) {
+      } else if (block_size_ == free_region->size) {
         allocated_addr = free_region->addr;
         free_region->is_free = false;
         if (free_region == free_head_) {
           free_head_ = free_region->next_free;
         } else {
-          assert (free_region->prev_free != nullptr);
+          assert(free_region->prev_free != nullptr);
           free_region->prev_free->next_free = free_region->next_free;
           if (free_region->next_free) {
             free_region->next_free->prev_free = free_region->prev_free;
@@ -95,16 +103,18 @@ uint64_t RemoteMemoryAllocator::rmalloc(size_t size) {
     // printf(
     //     "[%-16s] allocated ([0x%lx, 0x%lx), size=0x%lx) from region([0x%lx, "
     //     "0x%lx), size=0x%lx)\n",
-    //     "Info", allocated_addr, allocated_addr + size, size, free_region->addr,
-    //     free_region->addr + free_region_size, free_region_size);
-    assert(allocated_addr == free_region->addr && size == free_region->size);
+    //     "Info", allocated_addr, allocated_addr + size, size,
+    //     free_region->addr, free_region->addr + free_region_size,
+    //     free_region_size);
+    assert(allocated_addr == free_region->addr && block_size_ == free_region->size);
     addr_to_region_.insert({allocated_addr, free_region});
   }
 
   return allocated_addr;
 }
 
-RMRegion *RemoteMemoryAllocator::extract_from_free_list(RMRegion *region) {
+RMRegion *BlockBasedRemoteMemoryAllocator::extract_from_free_list(
+    RMRegion *region) {
   if (region->prev_free) {
     region->prev_free->next_free = region->next_free;
   }
@@ -120,7 +130,7 @@ RMRegion *RemoteMemoryAllocator::extract_from_free_list(RMRegion *region) {
   return region;
 }
 
-RMRegion *RemoteMemoryAllocator::prepend_free(RMRegion *region) {
+RMRegion *BlockBasedRemoteMemoryAllocator::prepend_free(RMRegion *region) {
   region->next_free = free_head_;
   region->prev_free = nullptr;
   if (free_head_) {
@@ -130,7 +140,7 @@ RMRegion *RemoteMemoryAllocator::prepend_free(RMRegion *region) {
   return region;
 }
 
-size_t RemoteMemoryAllocator::rmfree(uint64_t addr) {
+size_t BlockBasedRemoteMemoryAllocator::rmfree(uint64_t addr) {
   // printf("[%-16s] free 0x%lx\n", "Info", addr);
   std::lock_guard<std::mutex> lock(mutex_);
   RMRegion *region = addr_to_region_.at(addr);
@@ -167,7 +177,7 @@ size_t RemoteMemoryAllocator::rmfree(uint64_t addr) {
   return size_to_free;
 }
 
-void RemoteMemoryAllocator::print_size_info() {
+void BlockBasedRemoteMemoryAllocator::print_size_info() {
   size_t total_size = 0;
   size_t free_size = 0;
   RMRegion *region = head_;
@@ -181,7 +191,7 @@ void RemoteMemoryAllocator::print_size_info() {
   printf("free_size/total_size=%lu/%lu\n", free_size, total_size);
 }
 
-void RemoteMemoryAllocator::print(bool only_free) {
+void BlockBasedRemoteMemoryAllocator::print(bool only_free) {
   // print region list
   RMRegion *region;
   if (not only_free) {

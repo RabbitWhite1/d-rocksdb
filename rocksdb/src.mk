@@ -6,11 +6,12 @@ LIB_SOURCES =                                                   \
   cache/cache_reservation_manager.cc                            \
   cache/clock_cache.cc                                          \
   cache/lru_cache.cc                                            \
-  cache/d_lru_cache.cc                                         \
+  cache/d_lru_cache.cc                                          \
   cache/sharded_cache.cc                                        \
+  cache/remote_memory/block_based_rm_allocator.cc               \
+  cache/remote_memory/ff_based_rm_allocator.cc                  \
   cache/remote_memory/rdma_transport.cc                         \
   cache/remote_memory/rdma_utils.cc                             \
-  cache/remote_memory/rm_allocator.cc                           \
   cache/remote_memory/rm.cc                                     \
   db/arena_wrapped_db_iter.cc                                   \
   db/blob/blob_fetcher.cc                                       \

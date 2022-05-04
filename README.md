@@ -26,10 +26,9 @@
     - [x] time of hit in rm/hit in lm (or rm overhead)
     - [x] stats of lm/rm usage (through `GetMapProperty`)
 
-#### Improved Version 0
+#### Improved Version v1.1.0
 
-- [ ] 1. do not promote an entry every lookup.
-- [ ] 
+- [x] try to treat remote memory as blocks, i.e., only allocate a block for each cache block (here is an assumption that the block size can always be fit in a cache)
 
 ### YCSB
 

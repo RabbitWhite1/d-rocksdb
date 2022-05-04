@@ -12,6 +12,8 @@
 #include <string>
 
 #include "cache/remote_memory/rm.h"
+#include "cache/remote_memory/ff_based_rm_allocator.h"
+#include "cache/remote_memory/block_based_rm_allocator.h"
 #include "cache/sharded_cache.h"
 #include "port/lang.h"
 #include "port/malloc.h"

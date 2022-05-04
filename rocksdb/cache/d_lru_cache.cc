@@ -114,7 +114,7 @@ DLRUCacheShard::DLRUCacheShard(
     size_t capacity, bool strict_capacity_limit, double high_pri_pool_ratio,
     double rm_ratio, bool use_adaptive_mutex,
     CacheMetadataChargePolicy metadata_charge_policy, int max_upper_hash_bits,
-    const std::shared_ptr<RemoteMemory>& remote_memory)
+    const std::shared_ptr<RemoteMemory>&)
     : capacity_(0),
       high_pri_pool_usage_(0),
       strict_capacity_limit_(strict_capacity_limit),
@@ -134,8 +134,10 @@ DLRUCacheShard::DLRUCacheShard(
   rm_lru_.prev = &rm_lru_;
   SetCapacity(capacity);
   if (rm_ratio > 0.0) {
-    remote_memory_ =
-        std::make_shared<RemoteMemory>("10.0.0.5", capacity * rm_ratio);
+    // remote_memory_ = std::make_shared<RemoteMemory>(
+    //     new FFBasedRemoteMemoryAllocator(), "10.0.0.5", capacity * rm_ratio);
+    remote_memory_ = std::make_shared<RemoteMemory>(
+        new BlockBasedRemoteMemoryAllocator(4096ul), "10.0.0.5", capacity * rm_ratio);
   } else {
     remote_memory_ = nullptr;
   }
@@ -460,7 +462,8 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
     // is freed or the rm_lru list is empty
     if (remote_memory_) {
       EvictFromLMLRU(total_charge, &evict_to_rm_list);
-      // printf("[insert] evict from lm list, size=%lu\n", evict_to_rm_list.size());
+      // printf("[insert] evict from lm list, size=%lu\n",
+      // evict_to_rm_list.size());
       for (auto lm_entry : evict_to_rm_list) {
         lm_entry->SetEvictingToRM(true);
         // 1. evict rm_entry from RM to free enough space for this lm_entry
@@ -506,7 +509,8 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
       lm_usage_ += total_charge;
       usage_ += total_charge;
       if (old != nullptr) {
-        // assert(false && "[DEBUG] for readonly, there should not be old entry");
+        // assert(false && "[DEBUG] for readonly, there should not be old
+        // entry");
         s = Status::OkOverwritten();
         assert(old->InCache());
         old->SetInCache(false);
@@ -568,9 +572,9 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
 
 Cache::Handle* DLRUCacheShard::Lookup(
     const Slice& key, uint32_t hash,
-    const ShardedCache::CacheItemHelper* helper,
-    const ShardedCache::CreateCallback& create_cb, Cache::Priority priority,
-    bool wait, Statistics* stats, bool* from_rm) {
+    const ShardedCache::CacheItemHelper* /*helper*/,
+    const ShardedCache::CreateCallback& create_cb, Cache::Priority /*priority*/,
+    bool /*wait*/, Statistics* /*stats*/, bool* from_rm) {
   DLRUHandle* e = nullptr;
   {
     MutexLock l(&mutex_);
@@ -597,7 +601,8 @@ Cache::Handle* DLRUCacheShard::Lookup(
         autovector<DLRUHandle*> evict_to_rm_list;
         autovector<DLRUHandle*> last_reference_list;
         EvictFromLMLRU(rm_entry_charge, &evict_to_rm_list);
-        // printf("[lookup] evict from lm list, size=%lu\n", evict_to_rm_list.size());
+        // printf("[lookup] evict from lm list, size=%lu\n",
+        // evict_to_rm_list.size());
         for (auto lm_entry : evict_to_rm_list) {
           lm_entry->SetEvictingToRM(true);
           // 1. evict rm_entry from RM to free enough space for this lm_entry
@@ -803,7 +808,7 @@ void DLRUCacheShard::Erase(const Slice& key, uint32_t hash) {
   }
 }
 
-bool DLRUCacheShard::IsReady(Cache::Handle* handle) {
+bool DLRUCacheShard::IsReady(Cache::Handle* /*handle*/) {
   // TODO: check whether need this
   assert(false && "Not Debugged.");
   return false;
@@ -926,7 +931,7 @@ double DLRUCache::GetHighPriPoolRatio() {
   return result;
 }
 
-void DLRUCache::WaitAll(std::vector<Handle*>& handles) {
+void DLRUCache::WaitAll(std::vector<Handle*>& /*handles*/) {
   // TODO: no implemented
 }
 

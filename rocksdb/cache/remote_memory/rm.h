@@ -17,8 +17,9 @@
 namespace ROCKSDB_NAMESPACE {
 
 class RemoteMemory {
-public:
-  RemoteMemory(std::string server_name, const size_t size);
+ public:
+  RemoteMemory(RemoteMemoryAllocator *rm_allocator, std::string server_name,
+               const size_t size);
   ~RemoteMemory();
 
   void print();
@@ -29,7 +30,7 @@ public:
   int read(uint64_t rm_addr, void *buf, size_t size);
   int write(uint64_t rm_addr, void *buf, size_t size);
 
-private:
+ private:
   std::string server_name_;
   size_t rm_size_;
   std::mutex mutex_;
@@ -39,11 +40,11 @@ private:
 };
 
 class RemoteMemoryServer {
-public:
+ public:
   RemoteMemoryServer(std::string server_name);
   ~RemoteMemoryServer();
 
-private:
+ private:
   std::string server_name_;
   size_t rm_size_;
 
@@ -51,4 +52,4 @@ private:
   RemoteMemoryAllocator *allocator_;
 };
 
-} // namespace ROCKSDB_NAMESPACE
+}  // namespace ROCKSDB_NAMESPACE
