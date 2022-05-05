@@ -59,7 +59,7 @@ struct RMRegion *FFBasedRemoteMemoryAllocator::split_and_use_region(
 }
 
 RMRegion *FFBasedRemoteMemoryAllocator::rmalloc(size_t size) {
-  uint64_t allocated_addr = -1;
+  // uint64_t allocated_addr = -1;
   RMRegion *free_region = nullptr;
   size_t free_region_size = 0;
 
@@ -68,14 +68,14 @@ RMRegion *FFBasedRemoteMemoryAllocator::rmalloc(size_t size) {
     free_region = free_head_;
     while (free_region != nullptr) {
       if (size < (free_region_size = free_region->size)) {
-        allocated_addr = free_region->addr;
+        // allocated_addr = free_region->addr;
         RMRegion *new_free_region = split_and_use_region(free_region, size);
         if (free_region == free_head_) {
           free_head_ = new_free_region;
         }
         break;
       } else if (size == free_region->size) {
-        allocated_addr = free_region->addr;
+        // allocated_addr = free_region->addr;
         free_region->is_free = false;
         if (free_region == free_head_) {
           free_head_ = free_region->next_free;
@@ -101,7 +101,7 @@ RMRegion *FFBasedRemoteMemoryAllocator::rmalloc(size_t size) {
     //     "Info", allocated_addr, allocated_addr + size, size,
     //     free_region->addr, free_region->addr + free_region_size,
     //     free_region_size);
-    assert(allocated_addr == free_region->addr && size == free_region->size);
+    // assert(allocated_addr == free_region->addr && size == free_region->size);
   }
 
   return free_region;

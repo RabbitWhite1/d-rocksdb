@@ -8,6 +8,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -17,6 +18,7 @@
 
 #define VERB_ERR(verb, ret)                                                    \
   fprintf(stderr, "%s returned %d errno %d\n", verb, ret, errno)
+#define CHECK_WORKING
 
 namespace rdma {
 
@@ -34,6 +36,8 @@ enum rdma_id_state {
   RDMA_ID_STATE_TIMEWAIT_EXITED = 3,
   RDMA_ID_STATE_QP_DESTROYED = 4,
   RDMA_ID_STATE_ID_DESTROYED = 5,
+  RDMA_ID_STATE_READING = 6,
+  RDMA_ID_STATE_WRITING = 7,
 };
 
 /* Resources used in the example */
@@ -51,7 +55,7 @@ struct Context {
   struct rdma_cm_id *srq_id;
   struct rdma_cm_id *listen_id;
   struct rdma_cm_id **conn_ids;
-  enum rdma_id_state *id_states;
+  std::atomic<enum rdma_id_state> *id_states;
   struct rdma_event_channel *event_channel;
   struct ibv_mr *send_mr;
   struct ibv_mr *recv_mr;
@@ -72,6 +76,28 @@ struct Context {
   size_t rm_size;
 };
 
+enum async_request_type {
+  ASYNC_READ = 0,
+  ASYNC_WRITE = 1,
+};
+
+/* async ops request*/
+struct AsyncRequest {
+  // TODO: don't let any other thread modify the id_state if it is held by
+  // AsyncRequest (just checking whether it is reading/writing is ok)
+#ifdef CHECK_WORKING
+  std::atomic<enum rdma_id_state> *id_state;
+#endif
+  enum async_request_type type;
+  rdma_cm_id *cm_id;
+
+  char *lm_addr;
+  size_t lm_length;
+  uint64_t rm_addr;
+
+  int wait();
+};
+
 class Transport {
   // TODO: target on 1 qp now, will extent it to qp pool.
 public:
@@ -85,9 +111,11 @@ public:
   const struct Context *get_context() { return ctx_; }
 
   int read_rm(rdma_cm_id *cm_id, char *lm_addr, size_t lm_length,
-              struct ibv_mr *lm_mr, uint64_t rm_addr, uint32_t rm_rkey);
+              struct ibv_mr *lm_mr, uint64_t rm_addr, uint32_t rm_rkey,
+              AsyncRequest *async_request = nullptr);
   int write_rm(rdma_cm_id *cm_id, char *lm_addr, size_t lm_length,
-               struct ibv_mr *lm_mr, uint64_t rm_addr, uint32_t rm_rkey);
+               struct ibv_mr *lm_mr, uint64_t rm_addr, uint32_t rm_rkey,
+               AsyncRequest *async_request = nullptr);
   int send(rdma_cm_id *cm_id, char *lm_addr, size_t lm_length,
            struct ibv_mr *send_mr);
   int recv(rdma_cm_id *cm_id, char *lm_addr, size_t lm_length,

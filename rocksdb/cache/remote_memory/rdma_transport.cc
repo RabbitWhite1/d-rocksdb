@@ -1,6 +1,37 @@
 #include "rdma_transport.h"
 #include <iostream>
 
+int rdma::AsyncRequest::wait() {
+  int ne;
+  struct ibv_wc wc;
+
+#ifdef CHECK_RDMA_CM_ID_WORKING
+  if (type == ASYNC_READ) {
+    assert(*id_state == RDMA_ID_STATE_READING);
+  } else {
+    assert(type == ASYNC_WRITE && *id_state == RDMA_ID_STATE_WRITING);
+  }
+#endif
+
+  do {
+    ne = ibv_poll_cq(cm_id->send_cq, 1, &wc);
+    if (ne < 0) {
+      VERB_ERR("ibv_poll_cq", ne);
+      return ne;
+    }
+
+    if (wc.status != IBV_WC_SUCCESS) {
+      VERB_ERR("ibv_poll_cq", wc.status);
+      return wc.status;
+    }
+  } while (ne == 0);
+#ifdef CHECK_RDMA_CM_ID_WORKING
+  *id_state = RDMA_ID_STATE_CONNECTED;
+#endif
+
+  return 0;
+}
+
 rdma::Transport::Transport(bool server, const char *server_name) {
   assert(server == true && "if not serer, specify `size`");
   int ret;
@@ -27,8 +58,7 @@ rdma::Transport::Transport(bool server, const char *server_name) {
   ctx_->conn_ids =
       (struct rdma_cm_id **)calloc(ctx_->qp_count, sizeof(struct rdma_cm_id *));
   memset(ctx_->conn_ids, 0, ctx_->qp_count * sizeof(struct rdma_cm_id *));
-  ctx_->id_states =
-      (enum rdma_id_state *)calloc(ctx_->qp_count, sizeof(enum rdma_id_state));
+  ctx_->id_states = new std::atomic<enum rdma_id_state>[ctx_->qp_count];
   for (int i = 0; i < ctx_->qp_count; i++) {
     ctx_->id_states[i] = RDMA_ID_STATE_FREE;
   }
@@ -76,8 +106,7 @@ rdma::Transport::Transport(bool server, const char *server_name, size_t rm_size,
   ctx_->conn_ids =
       (struct rdma_cm_id **)calloc(ctx_->qp_count, sizeof(struct rdma_cm_id *));
   memset(ctx_->conn_ids, 0, ctx_->qp_count * sizeof(struct rdma_cm_id *));
-  ctx_->id_states =
-      (enum rdma_id_state *)calloc(ctx_->qp_count, sizeof(enum rdma_id_state));
+  ctx_->id_states = new std::atomic<enum rdma_id_state>[ctx_->qp_count];
   for (int i = 0; i < ctx_->qp_count; i++) {
     ctx_->id_states[i] = RDMA_ID_STATE_FREE;
   }
@@ -447,11 +476,13 @@ int rdma::Transport::handle_connect_request(struct rdma_cm_event *cm_event) {
 
   // TODO: return error instead of assert
   int next_conn_ids_idx = 0;
-  while (next_conn_ids_idx < ctx_->qp_count && ctx_->id_states[next_conn_ids_idx] != RDMA_ID_STATE_FREE) {
+  while (next_conn_ids_idx < ctx_->qp_count &&
+         ctx_->id_states[next_conn_ids_idx] != RDMA_ID_STATE_FREE) {
     next_conn_ids_idx++;
   }
   if (next_conn_ids_idx == ctx_->qp_count) {
-    printf("[%-16s] failed to connect, all conn_ids are connected\n", "Connection");
+    printf("[%-16s] failed to connect, all conn_ids are connected\n",
+           "Connection");
     rdma_reject(cm_event->id, NULL, 0);
     return -1;
   }
@@ -581,8 +612,8 @@ int rdma::Transport::handle_timewait_exit(struct rdma_cm_event *cm_event) {
   uint32_t qp_num = conn_id->qp->qp_num;
   size_t conn_idx = qp_num_2_conn_idx[qp_num];
   {
-    assert(ctx_->id_states[qp_num_2_conn_idx[qp_num]] =
-               RDMA_ID_STATE_DISCONNECTED);
+    assert(ctx_->id_states[qp_num_2_conn_idx[qp_num]] ==
+           RDMA_ID_STATE_DISCONNECTED);
     std::lock_guard<std::mutex> lock(mutex_);
     ctx_->id_states[conn_idx] = RDMA_ID_STATE_TIMEWAIT_EXITED;
     rdma_destroy_qp(conn_id);
@@ -606,9 +637,18 @@ int rdma::Transport::handle_timewait_exit(struct rdma_cm_event *cm_event) {
  */
 int rdma::Transport::read_rm(rdma_cm_id *cm_id, char *lm_addr, size_t lm_length,
                              struct ibv_mr *lm_mr, uint64_t rm_addr,
-                             uint32_t rm_rkey) {
+                             uint32_t rm_rkey, AsyncRequest *async_request) {
   int ret, ne;
   struct ibv_wc wc = {};
+
+#ifdef CHECK_RDMA_CM_ID_WORKING
+  size_t conn_idx = qp_num_2_conn_idx[cm_id->qp->qp_num];
+  enum rdma::rdma_id_state connected_state = RDMA_ID_STATE_READING;
+  while (!ctx_->id_states[conn_idx].compare_exchange_weak(
+      connected_state, RDMA_ID_STATE_READING))
+    ;
+#endif
+
   ret = rdma_post_read(cm_id, /*context=*/nullptr, lm_addr, lm_length, lm_mr,
                        /*flags=*/IBV_SEND_SIGNALED, rm_addr, rm_rkey);
   if (ret) {
@@ -619,18 +659,33 @@ int rdma::Transport::read_rm(rdma_cm_id *cm_id, char *lm_addr, size_t lm_length,
   // "Info",
   //        rm_rkey, rm_addr, lm_length);
 
-  do {
-    ne = ibv_poll_cq(cm_id->send_cq, 1, &wc);
-    if (ne < 0) {
-      VERB_ERR("ibv_poll_cq", ne);
-      return ne;
-    }
+  if (async_request != nullptr) {
+#ifdef CHECK_RDMA_CM_ID_WORKING
+    async_request->id_state = &ctx_->id_states[conn_idx];
+#endif
+    async_request->type = ASYNC_READ;
+    async_request->cm_id = cm_id;
+    async_request->lm_addr = lm_addr;
+    async_request->lm_length = lm_length;
+    async_request->rm_addr = rm_addr;
+  } else {
+    do {
+      ne = ibv_poll_cq(cm_id->send_cq, 1, &wc);
+      if (ne < 0) {
+        VERB_ERR("ibv_poll_cq", ne);
+        return ne;
+      }
 
-    if (wc.status != IBV_WC_SUCCESS) {
-      VERB_ERR("ibv_poll_cq", wc.status);
-      return wc.status;
-    }
-  } while (ne == 0);
+      if (wc.status != IBV_WC_SUCCESS) {
+        VERB_ERR("ibv_poll_cq", wc.status);
+        return wc.status;
+      }
+    } while (ne == 0);
+
+#ifdef CHECK_RDMA_CM_ID_WORKING
+    ctx_->id_states[conn_idx] = RDMA_ID_STATE_CONNECTED;
+#endif
+  }
 
   return 0;
 }
@@ -642,9 +697,19 @@ int rdma::Transport::read_rm(rdma_cm_id *cm_id, char *lm_addr, size_t lm_length,
  */
 int rdma::Transport::write_rm(rdma_cm_id *cm_id, char *lm_addr,
                               size_t lm_length, struct ibv_mr *lm_mr,
-                              uint64_t rm_addr, uint32_t rm_rkey) {
+                              uint64_t rm_addr, uint32_t rm_rkey,
+                              AsyncRequest *async_request) {
   int ret, ne;
   struct ibv_wc wc = {};
+
+#ifdef CHECK_RDMA_CM_ID_WORKING
+  size_t conn_idx = qp_num_2_conn_idx[cm_id->qp->qp_num];
+  enum rdma::rdma_id_state connected_state = RDMA_ID_STATE_WRITING;
+  while (!ctx_->id_states[conn_idx].compare_exchange_weak(
+      connected_state, RDMA_ID_STATE_WRITING))
+    ;
+#endif
+
   ret = rdma_post_write(cm_id, /*context=*/nullptr, lm_addr, lm_length, lm_mr,
                         /*flags=*/IBV_SEND_SIGNALED, rm_addr, rm_rkey);
   if (ret) {
@@ -655,18 +720,33 @@ int rdma::Transport::write_rm(rdma_cm_id *cm_id, char *lm_addr,
   // "Info",
   //        rm_rkey, rm_addr, lm_length);
 
-  do {
-    ne = ibv_poll_cq(cm_id->send_cq, 1, &wc);
-    if (ne < 0) {
-      VERB_ERR("ibv_poll_cq", ne);
-      return ne;
-    }
+  if (async_request != nullptr) {
+#ifdef CHECK_RDMA_CM_ID_WORKING
+    async_request->id_state = &ctx_->id_states[conn_idx];
+#endif
+    async_request->type = ASYNC_WRITE;
+    async_request->cm_id = cm_id;
+    async_request->lm_addr = lm_addr;
+    async_request->lm_length = lm_length;
+    async_request->rm_addr = rm_addr;
+  } else {
+    do {
+      ne = ibv_poll_cq(cm_id->send_cq, 1, &wc);
+      if (ne < 0) {
+        VERB_ERR("ibv_poll_cq", ne);
+        return ne;
+      }
 
-    if (wc.status != IBV_WC_SUCCESS) {
-      VERB_ERR("ibv_poll_cq", wc.status);
-      return wc.status;
-    }
-  } while (ne == 0);
+      if (wc.status != IBV_WC_SUCCESS) {
+        VERB_ERR("ibv_poll_cq", wc.status);
+        return wc.status;
+      }
+    } while (ne == 0);
+
+#ifdef CHECK_RDMA_CM_ID_WORKING
+    ctx_->id_states[conn_idx] = RDMA_ID_STATE_CONNECTED;
+#endif
+  }
 
   return 0;
 }

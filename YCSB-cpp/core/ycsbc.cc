@@ -227,7 +227,7 @@ int main(const int argc, const char *argv[]) {
     printf("\033[1;31mStart doing the required transactions! (%d ops)\033[0m\n", total_ops);
     printf("Press any key to continue...\n");
     fflush(stdout);
-    getchar();
+    // getchar();
     DoTransaction(total_ops, num_threads, measurements, status_db, show_status,
                   status_interval, dbs, wl, do_load, /*is_warmup=*/false);
   }

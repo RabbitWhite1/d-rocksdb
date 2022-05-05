@@ -30,16 +30,21 @@ RemoteMemory::~RemoteMemory() {
   delete transport_;
 }
 
-void RemoteMemory::rmfree(RMRegion *rm_region) { allocator_->rmfree(rm_region); }
-
-void RemoteMemory::rmfree(RMRegion *rm_region, size_t size) {
-  size_t freed_size = allocator_->rmfree(rm_region);
-  assert(freed_size == size);
+void RemoteMemory::rmfree(RMRegion *rm_region) {
+  allocator_->rmfree(rm_region);
 }
 
-int RemoteMemory::read(uint64_t rm_addr, void *buf, size_t size) {
+void RemoteMemory::rmfree(RMRegion *rm_region, size_t /*size*/) {
+  allocator_->rmfree(rm_region);
+  // size_t freed_size = allocator_->rmfree(rm_region);
+  // assert(freed_size == size);
+}
+
+int RemoteMemory::read(uint64_t rm_addr, void *buf, size_t size,
+                       AsyncRequest * /*async_request*/) {
   // TODO: decide which conn_id to use
   // TODO: check whether size is valid
+  std::lock_guard<std::mutex> lock(mutex_);
   const rdma::Context *ctx = transport_->get_context();
   int ret = transport_->read_rm(ctx->conn_ids[0], ctx->buf, size, ctx->buf_mr,
                                 rm_addr, ctx->rm_rkey);
@@ -48,12 +53,17 @@ int RemoteMemory::read(uint64_t rm_addr, void *buf, size_t size) {
     throw "read from remote memory failed";
   }
   // TODO: is it possible to omit this copy?
-  memcpy(buf, ctx->buf, size);
+  if (buf != nullptr) {
+    memcpy(buf, ctx->buf, size);
+  }
   return ret;
 }
-int RemoteMemory::write(uint64_t rm_addr, void *buf, size_t size) {
+
+int RemoteMemory::write(uint64_t rm_addr, void *buf, size_t size,
+                        AsyncRequest * /*async_request*/) {
   // TODO: decide which conn_id to use
   // TODO: check whether size is valid
+  std::lock_guard<std::mutex> lock(mutex_);
   const rdma::Context *ctx = transport_->get_context();
   // TODO: is it possible to omit this copy?
   memcpy(ctx->buf, buf, size);
@@ -65,6 +75,8 @@ int RemoteMemory::write(uint64_t rm_addr, void *buf, size_t size) {
   }
   return ret;
 }
+
+void *RemoteMemory::get_buf() { return transport_->get_context()->buf; }
 
 RemoteMemoryServer::RemoteMemoryServer(std::string server_name) {
   server_name_ = server_name;

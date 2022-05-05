@@ -313,7 +313,8 @@ class BlockBasedTable : public TableReader {
                                    GetContext* get_context,
                                    const Cache::CacheItemHelper* cache_helper,
                                    const Cache::CreateCallback& create_cb,
-                                   Cache::Priority priority) const;
+                                   Cache::Priority priority,
+                                   bool* from_rm) const;
 
   template <typename TBlocklike>
   Status InsertEntryToCache(const CacheTier& cache_tier, Cache* block_cache,
@@ -399,7 +400,7 @@ class BlockBasedTable : public TableReader {
                                CachableEntry<TBlocklike>* block,
                                const UncompressionDict& uncompression_dict,
                                BlockType block_type, const bool wait,
-                               GetContext* get_context) const;
+                               GetContext* get_context, bool* from_rm) const;
 
   // Put a raw block (maybe compressed) to the corresponding block caches.
   // This method will perform decompression against raw_block if needed and then

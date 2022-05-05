@@ -9,6 +9,7 @@
 
 #include <iostream>
 
+#include "async_request.h"
 #include "rdma_transport.h"
 #include "rdma_utils.h"
 #include "rm_allocator.h"
@@ -17,7 +18,7 @@
 namespace ROCKSDB_NAMESPACE {
 
 class RemoteMemory {
- public:
+public:
   RemoteMemory(RemoteMemoryAllocator *rm_allocator, std::string server_name,
                const size_t size);
   ~RemoteMemory();
@@ -26,11 +27,13 @@ class RemoteMemory {
 
   RMRegion *rmalloc(size_t size);
   void rmfree(RMRegion *rm_region);
-  void rmfree(RMRegion *rm_region, size_t size);  // free with verify.
-  int read(uint64_t rm_addr, void *buf, size_t size);
-  int write(uint64_t rm_addr, void *buf, size_t size);
+  void rmfree(RMRegion *rm_region, size_t size); // free with verify.
+  int read(uint64_t rm_addr, void *buf, size_t size,
+           AsyncRequest *async_request = nullptr);
+  int write(uint64_t rm_addr, void *buf, size_t size,
+            AsyncRequest *async_request = nullptr);
 
- private:
+private:
   std::string server_name_;
   size_t rm_size_;
   std::mutex mutex_;
@@ -40,11 +43,11 @@ class RemoteMemory {
 };
 
 class RemoteMemoryServer {
- public:
+public:
   RemoteMemoryServer(std::string server_name);
   ~RemoteMemoryServer();
 
- private:
+private:
   std::string server_name_;
   size_t rm_size_;
 
@@ -52,4 +55,4 @@ class RemoteMemoryServer {
   RemoteMemoryAllocator *allocator_;
 };
 
-}  // namespace ROCKSDB_NAMESPACE
+} // namespace ROCKSDB_NAMESPACE

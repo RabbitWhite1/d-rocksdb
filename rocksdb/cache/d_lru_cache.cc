@@ -110,11 +110,12 @@ void DLRUHandleTable::Resize() {
   length_bits_ = new_length_bits;
 }
 
-DLRUCacheShard::DLRUCacheShard(
-    size_t capacity, bool strict_capacity_limit, double high_pri_pool_ratio,
-    double rm_ratio, bool use_adaptive_mutex,
-    CacheMetadataChargePolicy metadata_charge_policy, int max_upper_hash_bits,
-    const std::shared_ptr<RemoteMemory>&)
+DLRUCacheShard::DLRUCacheShard(size_t capacity, bool strict_capacity_limit,
+                               double high_pri_pool_ratio, double rm_ratio,
+                               bool use_adaptive_mutex,
+                               CacheMetadataChargePolicy metadata_charge_policy,
+                               int max_upper_hash_bits,
+                               const std::shared_ptr<RemoteMemory>&)
     : capacity_(0),
       high_pri_pool_usage_(0),
       strict_capacity_limit_(strict_capacity_limit),
@@ -138,7 +139,8 @@ DLRUCacheShard::DLRUCacheShard(
     // remote_memory_ = std::make_shared<RemoteMemory>(
     //     new FFBasedRemoteMemoryAllocator(), server_ip, capacity * rm_ratio);
     remote_memory_ = std::make_shared<RemoteMemory>(
-        new BlockBasedRemoteMemoryAllocator(4096ul), server_ip, capacity * rm_ratio);
+        new BlockBasedRemoteMemoryAllocator(4096ul), server_ip,
+        capacity * rm_ratio);
   } else {
     remote_memory_ = nullptr;
   }
@@ -361,7 +363,7 @@ void DLRUCacheShard::EvictFromRMLRUAndFreeHandle(size_t charge) {
   do {
     // try to allocate and see if rm has enough space
     {
-      RMRegion *rm_addr = remote_memory_->rmalloc(charge);
+      RMRegion* rm_addr = remote_memory_->rmalloc(charge);
       if (rm_addr != 0) {
         remote_memory_->rmfree(rm_addr);
         break;
@@ -380,7 +382,7 @@ void DLRUCacheShard::EvictFromRMLRUAndFreeHandle(size_t charge) {
     assert(rm_usage_ >= old_total_charge);
     rm_usage_ -= old_total_charge;
     assert(old->IsLocal() == false);
-    remote_memory_->rmfree((RMRegion *)old->value);
+    remote_memory_->rmfree((RMRegion*)old->value);
     old->value = nullptr;
     old->Free();
     ++num_evicted;
@@ -395,7 +397,7 @@ void DLRUCacheShard::MoveValueToRM(DLRUHandle* e) {
   assert(e->info_.helper && "if using rm, should use helper with size_cb");
   // e->slice_size = e->info_.helper->size_cb(e->value);
   e->slice_size = reinterpret_cast<Block*>(e->value)->size();
-  RMRegion *rm_region = remote_memory_->rmalloc(e->slice_size);
+  RMRegion* rm_region = remote_memory_->rmalloc(e->slice_size);
   uint64_t rm_addr = rm_region->addr;
   assert(rm_addr > 0 && "should be able to allocate enough memory");
   // TODO: the `reinterpret_cast` is walkaroung. should use helper function.
@@ -408,21 +410,28 @@ void DLRUCacheShard::MoveValueToRM(DLRUHandle* e) {
 
 void DLRUCacheShard::FetchValueFromRM(
     DLRUHandle* e, const ShardedCache::CreateCallback& create_cb) {
+  std::chrono::high_resolution_clock::time_point begin, end;
   assert(e->InCache());
   assert(!e->IsLocal());
   assert(remote_memory_);
-  RMRegion *rm_region = (RMRegion *)e->value;
+  RMRegion* rm_region = (RMRegion*)e->value;
   uint64_t rm_addr = rm_region->addr;
-  std::unique_ptr<char[]> buf_data(new char[e->slice_size]());
-  // printf("reading from addr=0x%lx, size=%lu\n", rm_addr, e->slice_size);
-  remote_memory_->read(rm_addr, buf_data.get(), e->slice_size);
+  begin = std::chrono::high_resolution_clock::now();
+  remote_memory_->read(rm_addr, /*buf=*/nullptr, e->slice_size);
+  end = std::chrono::high_resolution_clock::now();
+  // printf("\t\tread from rm took %ld ns\n",
+  //        std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+  //            .count());
   // TODO: should return size as charge?
   size_t ret_charge = 0;
-  Status s = create_cb(buf_data.get(), e->slice_size, &e->value, &ret_charge);
+  begin = std::chrono::high_resolution_clock::now();
+  Status s = create_cb(remote_memory_->get_buf(), e->slice_size, &e->value, &ret_charge);
+  end = std::chrono::high_resolution_clock::now();
+  // printf("\t\tcreate cb took %ld ns\n",
+  //        std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+  //            .count());
   assert(s.ok());
   remote_memory_->rmfree(rm_region);
-  // printf("free handle(&=%p, rm_addr=%lx, IsLocal=%d)\n", e, rm_addr,
-  // e->IsLocal());
 }
 
 void DLRUCacheShard::SetCapacity(size_t capacity) {
@@ -541,7 +550,7 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
             } else {
               assert(rm_usage_ >= old_total_charge);
               rm_usage_ -= old_total_charge;
-              remote_memory_->rmfree((RMRegion *)old->value);
+              remote_memory_->rmfree((RMRegion*)old->value);
               old->Free();
             }
           } else {
@@ -579,6 +588,7 @@ Cache::Handle* DLRUCacheShard::Lookup(
     const ShardedCache::CreateCallback& create_cb, Cache::Priority /*priority*/,
     bool /*wait*/, Statistics* /*stats*/, bool* from_rm) {
   DLRUHandle* e = nullptr;
+  std::chrono::high_resolution_clock::time_point begin, end;
   {
     MutexLock l(&mutex_);
     e = table_.Lookup(key, hash);
@@ -593,11 +603,16 @@ Cache::Handle* DLRUCacheShard::Lookup(
         assert(remote_memory_);
         // 1. remove from RMLRU and fetch value
         // The entry is in RMLRU since it's in hash and in remote memory
+        begin = std::chrono::high_resolution_clock::now();
         RMLRU_Remove(e);
         size_t rm_entry_charge = e->CalcTotalCharge(metadata_charge_policy_);
         rm_usage_ -= rm_entry_charge;
         // fetch it from remote memory
         FetchValueFromRM(e, create_cb);
+        end = std::chrono::high_resolution_clock::now();
+        // printf("\tfetch from rm took %ld ns\n",
+        //        std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+        //            .count());
         e->slice_size = 0;
         // 2. evict to free enough space for this entry
         // TODO: codes below is duplicated, abstract it.
@@ -607,6 +622,7 @@ Cache::Handle* DLRUCacheShard::Lookup(
         // printf("[lookup] evict from lm list, size=%lu\n",
         // evict_to_rm_list.size());
         for (auto lm_entry : evict_to_rm_list) {
+          begin = std::chrono::high_resolution_clock::now();
           lm_entry->SetEvictingToRM(true);
           // 1. evict rm_entry from RM to free enough space for this lm_entry
           EvictFromRMLRUAndFreeHandle(
@@ -624,6 +640,11 @@ Cache::Handle* DLRUCacheShard::Lookup(
           assert(lm_entry->IsLocal() == true);
           lm_entry->SetLocal(false);
           lm_entry->SetEvictingToRM(false);
+          end = std::chrono::high_resolution_clock::now();
+          // printf(
+          //     "\teach rm eviction and move to rm took %ld ns\n",
+          //     std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+          //         .count());
         }
         // 3. setup rm_entry to be local
         lm_usage_ += rm_entry_charge;
@@ -729,7 +750,7 @@ bool DLRUCacheShard::Release(Cache::Handle* handle, bool force_erase) {
     if (e->IsLocal()) {
       e->FreeValue();
     } else {
-      remote_memory_->rmfree((RMRegion *)e->value);
+      remote_memory_->rmfree((RMRegion*)e->value);
     }
     e->Free();
   }

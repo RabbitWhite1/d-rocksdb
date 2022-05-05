@@ -32,8 +32,14 @@
 
 #### Improved Version v2.0.0
 
-- [ ] modify rdma_transport to support async read/write
-- [ ] modify rdma_transport to support qp pool (avoid contention)
+- [ ] support async read/write
+  - [x] modify rdma_transport to support async read/write (ignore potential race)
+  - [ ] modify rm to support async ops
+    - [ ] AsyncRequest with a buffer to recv remote value or a pointer to buffer that will be sent
+  - [ ] modify DLRUCache to use async ops
+    - [ ] do the transfering out of mutex
+    - [ ] invoke `wait` upon using the DLRUHandle (e.g., Lookup), and do free if necessary.
+- [ ] modify rm to support rdma_transport pool (avoid contention)
 - [ ] overlap rdma read/write as much as possible
 
 ### YCSB

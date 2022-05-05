@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <limits>
 #include <string>
 #include <unordered_set>
@@ -366,20 +367,20 @@ Cache::Handle* BlockBasedTable::GetEntryFromCache(
     const CacheTier& cache_tier, Cache* block_cache, const Slice& key,
     BlockType block_type, const bool wait, GetContext* get_context,
     const Cache::CacheItemHelper* cache_helper,
-    const Cache::CreateCallback& create_cb, Cache::Priority priority) const {
+    const Cache::CreateCallback& create_cb, Cache::Priority priority,
+    bool* from_rm) const {
   Cache::Handle* cache_handle = nullptr;
-  bool from_rm = false;
   if (cache_tier == CacheTier::kNonVolatileBlockTier) {
     cache_handle =
         block_cache->Lookup(key, cache_helper, create_cb, priority, wait,
-                            rep_->ioptions.statistics.get(), &from_rm);
+                            rep_->ioptions.statistics.get(), from_rm);
   } else {
     cache_handle = block_cache->Lookup(key, rep_->ioptions.statistics.get());
   }
 
   if (cache_handle != nullptr) {
     UpdateCacheHitMetrics(block_type, get_context,
-                          block_cache->GetUsage(cache_handle), from_rm);
+                          block_cache->GetUsage(cache_handle), *from_rm);
   } else {
     UpdateCacheMissMetrics(block_type, get_context);
   }
@@ -1188,7 +1189,7 @@ Status BlockBasedTable::GetDataBlockFromCache(
     const Slice& cache_key, Cache* block_cache, Cache* block_cache_compressed,
     const ReadOptions& read_options, CachableEntry<TBlocklike>* block,
     const UncompressionDict& uncompression_dict, BlockType block_type,
-    const bool wait, GetContext* get_context) const {
+    const bool wait, GetContext* get_context, bool* from_rm) const {
   const size_t read_amp_bytes_per_bit =
       block_type == BlockType::kData
           ? rep_->table_options.read_amp_bytes_per_bit
@@ -1220,7 +1221,7 @@ Status BlockBasedTable::GetDataBlockFromCache(
         rep_->ioptions.lowest_used_cache_tier, block_cache, cache_key,
         block_type, wait, get_context,
         BlocklikeTraits<TBlocklike>::GetCacheItemHelper(block_type), create_cb,
-        priority);
+        priority, from_rm);
     if (cache_handle != nullptr) {
       block->SetCachedValue(
           reinterpret_cast<TBlocklike*>(block_cache->Value(cache_handle)),
@@ -1517,14 +1518,30 @@ Status BlockBasedTable::MaybeReadBlockAndLoadToCache(
     key = key_data.AsSlice();
 
     if (!contents) {
+      // std::chrono::high_resolution_clock::time_point begin =
+      //     std::chrono::high_resolution_clock::now();
+      bool from_rm = false;
       s = GetDataBlockFromCache(key, block_cache, block_cache_compressed, ro,
                                 block_entry, uncompression_dict, block_type,
-                                wait, get_context);
+                                wait, get_context, &from_rm);
       // Value could still be null at this point, so check the cache handle
       // and update the read pattern for prefetching
       if (block_entry->GetValue() || block_entry->GetCacheHandle()) {
+        // std::chrono::high_resolution_clock::time_point end =
+        //     std::chrono::high_resolution_clock::now();
         // TODO(haoyu): Differentiate cache hit on uncompressed block cache and
         // compressed block cache.
+        // if (from_rm) {
+        //   printf(
+        //       "GetDataBlockFromCache (rm) took %ld ns\n",
+        //       std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+        //           .count());
+        // } else {
+        //   printf(
+        //       "GetDataBlockFromCache (lm) took %ld ns\n",
+        //       std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+        //           .count());
+        // }
         is_cache_hit = true;
         if (prefetch_buffer) {
           // Update the block details so that PrefetchBuffer can use the read
@@ -1550,6 +1567,8 @@ Status BlockBasedTable::MaybeReadBlockAndLoadToCache(
       CompressionType raw_block_comp_type;
       BlockContents raw_block_contents;
       if (!contents) {
+        // std::chrono::high_resolution_clock::time_point begin =
+        //     std::chrono::high_resolution_clock::now();
         StopWatch sw(rep_->ioptions.clock, statistics, READ_BLOCK_GET_MICROS);
         BlockFetcher block_fetcher(
             rep_->file.get(), prefetch_buffer, rep_->footer, ro, handle,
@@ -1576,6 +1595,12 @@ Status BlockBasedTable::MaybeReadBlockAndLoadToCache(
               break;
           }
         }
+        // std::chrono::high_resolution_clock::time_point end =
+        //     std::chrono::high_resolution_clock::now();
+        // printf("ReadBlockContents took %ld ns\n",
+        //        std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+        //            .count());
+
       } else {
         raw_block_comp_type = GetBlockCompressionType(*contents);
       }
@@ -1583,10 +1608,17 @@ Status BlockBasedTable::MaybeReadBlockAndLoadToCache(
       if (s.ok()) {
         // If filling cache is allowed and a cache is configured, try to put the
         // block to the cache.
+        // std::chrono::high_resolution_clock::time_point begin =
+        //     std::chrono::high_resolution_clock::now();
         s = PutDataBlockToCache(
             key, block_cache, block_cache_compressed, block_entry, contents,
             raw_block_comp_type, uncompression_dict,
             GetMemoryAllocator(rep_->table_options), block_type, get_context);
+        // std::chrono::high_resolution_clock::time_point end =
+        //     std::chrono::high_resolution_clock::now();
+        // printf("PutDataBlockToCache took %ld ns\n",
+        //        std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+        //            .count());
       }
     }
   }

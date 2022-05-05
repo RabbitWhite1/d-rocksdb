@@ -19,16 +19,14 @@ include_directories(.)
 # aux_source_directory(. SOURCES)
 set(SOURCES
   cache/remote_memory/rm.cc
-  cache/remote_memory/rm_allocator.cc
+  cache/remote_memory/ff_based_rm_allocator.cc
+  cache/remote_memory/block_based_rm_allocator.cc
   cache/remote_memory/rdma_transport.cc
   cache/remote_memory/rdma_utils.cc
 )
 
 add_executable(rdma_transport_test rdma_transport_test.cc ${SOURCES})
 target_link_libraries(rdma_transport_test ${LIB_IBVERBS} ${LIB_RDMACM})
-
-add_executable(rm_test rm_test.cc ${SOURCES})
-target_link_libraries(rm_test ${LIB_IBVERBS} ${LIB_RDMACM})
 
 add_executable(rm_server rm_server.cc ${SOURCES})
 target_link_libraries(rm_server ${LIB_IBVERBS} ${LIB_RDMACM})

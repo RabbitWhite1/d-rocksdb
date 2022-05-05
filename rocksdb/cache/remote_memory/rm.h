@@ -9,6 +9,7 @@
 
 #include <iostream>
 
+#include "async_request.h"
 #include "rdma_transport.h"
 #include "rdma_utils.h"
 #include "rm_allocator.h"
@@ -27,8 +28,11 @@ class RemoteMemory {
   RMRegion *rmalloc(size_t size);
   void rmfree(RMRegion *rm_region);
   void rmfree(RMRegion *rm_region, size_t size);  // free with verify.
-  int read(uint64_t rm_addr, void *buf, size_t size);
-  int write(uint64_t rm_addr, void *buf, size_t size);
+  int read(uint64_t rm_addr, void *buf, size_t size,
+           AsyncRequest *async_request = nullptr);
+  int write(uint64_t rm_addr, void *buf, size_t size,
+            AsyncRequest *async_request = nullptr);
+  void *get_buf();
 
  private:
   std::string server_name_;

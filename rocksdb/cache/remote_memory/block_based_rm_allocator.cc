@@ -61,10 +61,10 @@ struct RMRegion *BlockBasedRemoteMemoryAllocator::split_and_use_region(
   return new_region;
 }
 
-RMRegion *BlockBasedRemoteMemoryAllocator::rmalloc(size_t size) {
-  assert(size < block_size_);
+RMRegion *BlockBasedRemoteMemoryAllocator::rmalloc(size_t /*size*/) {
+  // assert(size < block_size_);
 
-  uint64_t allocated_addr = -1;
+  // uint64_t allocated_addr = -1;
   RMRegion *free_region = nullptr;
   size_t free_region_size = 0;
 
@@ -73,7 +73,7 @@ RMRegion *BlockBasedRemoteMemoryAllocator::rmalloc(size_t size) {
     free_region = free_head_;
     while (free_region != nullptr) {
       if (block_size_ < (free_region_size = free_region->size)) {
-        allocated_addr = free_region->addr;
+        // allocated_addr = free_region->addr;
         RMRegion *new_free_region =
             split_and_use_region(free_region, block_size_);
         if (free_region == free_head_) {
@@ -81,7 +81,7 @@ RMRegion *BlockBasedRemoteMemoryAllocator::rmalloc(size_t size) {
         }
         break;
       } else if (block_size_ == free_region->size) {
-        allocated_addr = free_region->addr;
+        // allocated_addr = free_region->addr;
         free_region->is_free = false;
         if (free_region == free_head_) {
           free_head_ = free_region->next_free;
@@ -107,8 +107,8 @@ RMRegion *BlockBasedRemoteMemoryAllocator::rmalloc(size_t size) {
     //     "Info", allocated_addr, allocated_addr + size, size,
     //     free_region->addr, free_region->addr + free_region_size,
     //     free_region_size);
-    assert(allocated_addr == free_region->addr &&
-           block_size_ == free_region->size);
+    // assert(allocated_addr == free_region->addr &&
+    //        block_size_ == free_region->size);
   }
 
   return free_region;

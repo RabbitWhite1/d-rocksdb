@@ -30,16 +30,20 @@ RemoteMemory::~RemoteMemory() {
   delete transport_;
 }
 
-void RemoteMemory::rmfree(RMRegion *rm_region) { allocator_->rmfree(rm_region); }
+void RemoteMemory::rmfree(RMRegion *rm_region) {
+  allocator_->rmfree(rm_region);
+}
 
 void RemoteMemory::rmfree(RMRegion *rm_region, size_t size) {
   size_t freed_size = allocator_->rmfree(rm_region);
   assert(freed_size == size);
 }
 
-int RemoteMemory::read(uint64_t rm_addr, void *buf, size_t size) {
+int RemoteMemory::read(uint64_t rm_addr, void *buf, size_t size,
+                       AsyncRequest * /*async_request*/) {
   // TODO: decide which conn_id to use
   // TODO: check whether size is valid
+  std::lock_guard<std::mutex> lock(mutex_);
   const rdma::Context *ctx = transport_->get_context();
   int ret = transport_->read_rm(ctx->conn_ids[0], ctx->buf, size, ctx->buf_mr,
                                 rm_addr, ctx->rm_rkey);
@@ -51,9 +55,11 @@ int RemoteMemory::read(uint64_t rm_addr, void *buf, size_t size) {
   memcpy(buf, ctx->buf, size);
   return ret;
 }
-int RemoteMemory::write(uint64_t rm_addr, void *buf, size_t size) {
+int RemoteMemory::write(uint64_t rm_addr, void *buf, size_t size,
+                        AsyncRequest * /*async_request*/) {
   // TODO: decide which conn_id to use
   // TODO: check whether size is valid
+  std::lock_guard<std::mutex> lock(mutex_);
   const rdma::Context *ctx = transport_->get_context();
   // TODO: is it possible to omit this copy?
   memcpy(ctx->buf, buf, size);
@@ -77,4 +83,4 @@ RemoteMemoryServer::~RemoteMemoryServer() {
   delete allocator_;
   delete transport_;
 }
-}  // namespace ROCKSDB_NAMESPACE
+} // namespace ROCKSDB_NAMESPACE

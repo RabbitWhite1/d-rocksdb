@@ -27,10 +27,10 @@ Cache::CreateCallback GetCreateCallback(size_t read_amp_bytes_per_bit,
   return [read_amp_bytes_per_bit, statistics, using_zstd, filter_policy](
              const void* buf, size_t size, void** out_obj,
              size_t* charge) -> Status {
-    // assert(buf != nullptr);
-    // std::unique_ptr<char[]> buf_data(new char[size]());
-    // memcpy(buf_data.get(), buf, size);
-    BlockContents bc = BlockContents(std::move(buf), size);
+    assert(buf != nullptr);
+    std::unique_ptr<char[]> buf_data(new char[size]());
+    memcpy(buf_data.get(), buf, size);
+    BlockContents bc = BlockContents(std::move(buf_data), size);
     TBlocklike* ucd_ptr = BlocklikeTraits<TBlocklike>::Create(
         std::move(bc), read_amp_bytes_per_bit, statistics, using_zstd,
         filter_policy);
