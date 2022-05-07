@@ -413,7 +413,6 @@ Status BlockBasedTable::InsertEntryToCache(
     Cache::Handle** cache_handle, Cache::Priority priority) const {
   Status s = Status::OK();
   if (cache_tier == CacheTier::kNonVolatileBlockTier) {
-    // printf("reader: size=%lu\n", block_holder->size());
     s = block_cache->Insert(key, block_holder.get(), cache_helper, charge,
                             cache_handle, priority);
   } else {
@@ -1527,10 +1526,10 @@ Status BlockBasedTable::MaybeReadBlockAndLoadToCache(
       // Value could still be null at this point, so check the cache handle
       // and update the read pattern for prefetching
       if (block_entry->GetValue() || block_entry->GetCacheHandle()) {
-        // std::chrono::high_resolution_clock::time_point end =
-        //     std::chrono::high_resolution_clock::now();
         // TODO(haoyu): Differentiate cache hit on uncompressed block cache and
         // compressed block cache.
+        // std::chrono::high_resolution_clock::time_point end =
+        //     std::chrono::high_resolution_clock::now();
         // if (from_rm) {
         //   printf(
         //       "GetDataBlockFromCache (rm) took %ld ns\n",
@@ -1539,7 +1538,7 @@ Status BlockBasedTable::MaybeReadBlockAndLoadToCache(
         // } else {
         //   printf(
         //       "GetDataBlockFromCache (lm) took %ld ns\n",
-        //       std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+        //       std::chrono::3duration_cast<std::chrono::nanoseconds>(end - begin)
         //           .count());
         // }
         is_cache_hit = true;

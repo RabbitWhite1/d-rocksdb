@@ -11,9 +11,9 @@
 #include <memory>
 #include <string>
 
-#include "cache/remote_memory/rm.h"
-#include "cache/remote_memory/ff_based_rm_allocator.h"
 #include "cache/remote_memory/block_based_rm_allocator.h"
+#include "cache/remote_memory/ff_based_rm_allocator.h"
+#include "cache/remote_memory/rm.h"
 #include "cache/sharded_cache.h"
 #include "port/lang.h"
 #include "port/malloc.h"
@@ -86,10 +86,10 @@ struct DLRUHandle {
     HAS_HIT = (1 << 3),
     // Can this be inserted into the secondary cache
     IS_SECONDARY_CACHE_COMPATIBLE = (1 << 4),
-    // Is evicting to RM
-    IS_EVICTING_TO_RM = (1 << 5),
-    // Has the item been promoted from a lower tier
-    IS_PROMOTED = (1 << 6),
+    // Is the value fetching from rm
+    IS_FETCHING_FROM_RM = (1 << 5),
+    // is the value moving to rm
+    IS_MOVING_TO_RM = (1 << 6),
     // Is the data of the handle in local
     IS_LOCAL = (1 << 7),
   };
@@ -133,8 +133,8 @@ struct DLRUHandle {
     return flags & IS_SECONDARY_CACHE_COMPATIBLE;
 #endif  // __SANITIZE_THREAD__
   }
-  bool IsEvictingToRM() const { return flags & IS_EVICTING_TO_RM; }
-  bool IsPromoted() const { return flags & IS_PROMOTED; }
+  bool IsFetchingFromRM() const { return flags & IS_FETCHING_FROM_RM; }
+  bool IsMovingToRM() const { return flags & IS_MOVING_TO_RM; }
   bool IsLocal() const { return flags & IS_LOCAL; }
 
   void SetInCache(bool in_cache) {
@@ -174,19 +174,19 @@ struct DLRUHandle {
 #endif  // __SANITIZE_THREAD__
   }
 
-  void SetPromoted(bool promoted) {
-    if (promoted) {
-      flags |= IS_PROMOTED;
+  void SetMovingToRM(bool moving_to_rm) {
+    if (moving_to_rm) {
+      flags |= IS_MOVING_TO_RM;
     } else {
-      flags &= ~IS_PROMOTED;
+      flags &= ~IS_MOVING_TO_RM;
     }
   }
 
-  void SetEvictingToRM(bool is_evicting_to_rm) {
-    if (is_evicting_to_rm) {
-      flags |= IS_EVICTING_TO_RM;
+  void SetFetchingFromRM(bool fetching_from_rm) {
+    if (fetching_from_rm) {
+      flags |= IS_FETCHING_FROM_RM;
     } else {
-      flags &= ~IS_EVICTING_TO_RM;
+      flags &= ~IS_FETCHING_FROM_RM;
     }
   }
 
@@ -298,7 +298,8 @@ class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
                  bool use_adaptive_mutex,
                  CacheMetadataChargePolicy metadata_charge_policy,
                  int max_upper_hash_bits,
-                 const std::shared_ptr<RemoteMemory>& remote_memory);
+                 const std::shared_ptr<RemoteMemory>& remote_memory,
+                 const size_t shard_id);
   virtual ~DLRUCacheShard() override = default;
 
   // Separate from constructor so caller can easily make an array of DLRUCache
@@ -342,7 +343,11 @@ class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
     return Release(handle, force_erase);
   }
   virtual bool IsReady(Cache::Handle* /*handle*/) override;
-  virtual void Wait(Cache::Handle* /*handle*/) override {}
+  virtual void Wait(Cache::Handle* handle) override;
+  virtual void Wait(DLRUHandle* handle) {
+    Wait(reinterpret_cast<Cache::Handle*>(handle));
+  }
+  virtual void Wait(DLRUHandle* handle, ShardedCache::CreateCallback create_cb);
   virtual bool Ref(Cache::Handle* handle) override;
   virtual bool Release(Cache::Handle* handle,
                        bool force_erase = false) override;
@@ -411,9 +416,11 @@ class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
   void EvictFromLMLRU(size_t charge,
                       autovector<DLRUHandle*>* evicted_from_lm_list);
   void EvictFromRMLRUAndFreeHandle(size_t charge);
-  void MoveValueToRM(DLRUHandle* handle);
+  void MoveValueToRM(DLRUHandle* handle,
+                     RMAsyncRequest* rm_async_request = nullptr);
   void FetchValueFromRM(DLRUHandle* e,
-                        const ShardedCache::CreateCallback& create_cb);
+                        const ShardedCache::CreateCallback& create_cb,
+                        RMAsyncRequest* rm_async_request = nullptr);
 
   // Initialized before use.
   size_t capacity_;
@@ -513,6 +520,8 @@ class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
   mutable port::Mutex mutex_;
 
   std::shared_ptr<RemoteMemory> remote_memory_;
+
+  size_t shard_id_;
 };
 
 class DLRUCache

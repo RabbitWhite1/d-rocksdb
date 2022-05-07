@@ -16,15 +16,16 @@
 
 #include "rdma_utils.h"
 
-#define VERB_ERR(verb, ret)                                                    \
+#define VERB_ERR(verb, ret) \
   fprintf(stderr, "%s returned %d errno %d\n", verb, ret, errno)
-#define CHECK_WORKING
+// #define CHECK_RDMA_CM_ID_WORKING
 
 namespace rdma {
 
 constexpr char *DEFAULT_PORT = (char *)"51216";
 constexpr int DEFAULT_MAX_WR = 64;
 constexpr int DEFAULT_MAX_QP = 64;
+constexpr int DEFAULT_MAX_SHARDS = 64;
 constexpr int DEFAULT_MAX_CLIENT_QP = 1;
 constexpr int DEFAULT_MSG_LENGTH = 1024;
 constexpr int DEFAULT_BUF_LENGTH = 8192;
@@ -59,21 +60,27 @@ struct Context {
   struct rdma_event_channel *event_channel;
   struct ibv_mr *send_mr;
   struct ibv_mr *recv_mr;
-  struct ibv_mr *buf_mr;
+  struct ibv_mr **buf_mrs;
   struct ibv_srq *srq;
   struct ibv_cq *srq_cq;
   struct ibv_comp_channel *srq_cq_channel;
   char *send_buf;
   char *recv_buf;
   /*
-   * It is the remote memory for server, whose size is ; and
-   * it is local buffer for client.
+   * For client, more bufs enbale higher concurrency, its size is `qp_count`
+   * For server, it has to have a buf (i.e., rm) for each shard, its size is `max_num_shards`
    */
-  char *buf;
-  /* remote memory info */
+  char **bufs;
+  /* remote memory info (client only) */
   uint32_t rm_rkey;
   uint64_t rm_addr;
   size_t rm_size;
+
+  /* client only*/
+  size_t shard_id;
+  /* server only*/
+  size_t *num_connnected_client;  // index is `shard_id`
+  size_t max_num_shards;
 };
 
 enum async_request_type {
@@ -82,29 +89,31 @@ enum async_request_type {
 };
 
 /* async ops request*/
-struct AsyncRequest {
+struct RDMAAsyncRequest {
   // TODO: don't let any other thread modify the id_state if it is held by
   // AsyncRequest (just checking whether it is reading/writing is ok)
-#ifdef CHECK_WORKING
+#ifdef CHECK_RDMA_CM_ID_WORKING
   std::atomic<enum rdma_id_state> *id_state;
 #endif
   enum async_request_type type;
-  rdma_cm_id *cm_id;
+  struct rdma_cm_id *cm_id;
 
   char *lm_addr;
   size_t lm_length;
   uint64_t rm_addr;
 
   int wait();
+  int reset_cm_id_state();
 };
 
 class Transport {
   // TODO: target on 1 qp now, will extent it to qp pool.
-public:
+ public:
   // server
-  Transport(bool server, const char *server_name);
+  Transport(bool server, const char *server_name, size_t max_num_shards=DEFAULT_MAX_SHARDS);
   // client
-  Transport(bool server, const char *server_name, size_t rm_size,
+  Transport(bool server, const char *server_name, size_t rm_size, size_t shard_id,
+            size_t client_qp_count = DEFAULT_MAX_CLIENT_QP,
             size_t local_buf_size = DEFAULT_BUF_LENGTH);
   ~Transport();
 
@@ -112,21 +121,22 @@ public:
 
   int read_rm(rdma_cm_id *cm_id, char *lm_addr, size_t lm_length,
               struct ibv_mr *lm_mr, uint64_t rm_addr, uint32_t rm_rkey,
-              AsyncRequest *async_request = nullptr);
+              RDMAAsyncRequest *rdma_async_request = nullptr);
   int write_rm(rdma_cm_id *cm_id, char *lm_addr, size_t lm_length,
                struct ibv_mr *lm_mr, uint64_t rm_addr, uint32_t rm_rkey,
-               AsyncRequest *async_request = nullptr);
+               RDMAAsyncRequest *rdma_async_request = nullptr);
   int send(rdma_cm_id *cm_id, char *lm_addr, size_t lm_length,
            struct ibv_mr *send_mr);
   int recv(rdma_cm_id *cm_id, char *lm_addr, size_t lm_length,
            struct ibv_mr *recv_mr);
 
-private:
+ private:
   struct rdma::Context *ctx_;
   struct rdma_addrinfo *rai_;
 
   std::mutex mutex_;
   std::unordered_map<uint32_t, size_t> qp_num_2_conn_idx;
+  std::unordered_map<uint32_t, size_t> qp_num_2_shard_id;
 
   int init_resources(struct rdma_addrinfo *rai);
   void destroy_resources();
@@ -140,4 +150,4 @@ private:
   int handle_timewait_exit(struct rdma_cm_event *cm_event);
 };
 
-} // namespace rdma
+}  // namespace rdma

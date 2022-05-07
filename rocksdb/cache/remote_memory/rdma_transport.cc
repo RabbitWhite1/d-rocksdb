@@ -1,38 +1,54 @@
 #include "rdma_transport.h"
+
 #include <iostream>
 
-int rdma::AsyncRequest::wait() {
+int rdma::RDMAAsyncRequest::wait() {
   int ne;
-  struct ibv_wc wc;
+  struct ibv_wc wc = {};
 
 #ifdef CHECK_RDMA_CM_ID_WORKING
   if (type == ASYNC_READ) {
-    assert(*id_state == RDMA_ID_STATE_READING);
+    if (not(id_state->load() == RDMA_ID_STATE_READING)) {
+      printf("type=%d, id_state=%d\n", type, id_state->load());
+      throw std::runtime_error("RDMAAsyncRequest::wait() failed");
+    }
   } else {
-    assert(type == ASYNC_WRITE && *id_state == RDMA_ID_STATE_WRITING);
+    if (not(type == ASYNC_WRITE && id_state->load() == RDMA_ID_STATE_WRITING)) {
+      printf("type=%d, id_state=%d\n", type, id_state->load());
+      throw std::runtime_error("RDMAAsyncRequest::wait() failed");
+    }
   }
 #endif
 
   do {
     ne = ibv_poll_cq(cm_id->send_cq, 1, &wc);
     if (ne < 0) {
+      printf("wc.status: %s\n", ibv_wc_status_str(wc.status));
       VERB_ERR("ibv_poll_cq", ne);
-      return ne;
+      throw std::runtime_error("ibv_poll_cq failed");
     }
 
     if (wc.status != IBV_WC_SUCCESS) {
       VERB_ERR("ibv_poll_cq", wc.status);
-      return wc.status;
+      printf("wc.status: %s\n", ibv_wc_status_str(wc.status));
+      throw std::runtime_error("ibv_poll_cq failed");
     }
   } while (ne == 0);
-#ifdef CHECK_RDMA_CM_ID_WORKING
-  *id_state = RDMA_ID_STATE_CONNECTED;
-#endif
 
   return 0;
 }
 
-rdma::Transport::Transport(bool server, const char *server_name) {
+int rdma::RDMAAsyncRequest::reset_cm_id_state() {
+#ifdef CHECK_RDMA_CM_ID_WORKING
+  *id_state = RDMA_ID_STATE_CONNECTED;
+  printf("cm_id=%p, change to RDMA_ID_STATE_CONNECTED(%d)\n", cm_id,
+         id_state->load());
+#endif
+  return 0;
+}
+
+rdma::Transport::Transport(bool server, const char *server_name,
+                           size_t max_num_shards) {
   assert(server == true && "if not serer, specify `size`");
   int ret;
   struct rdma_addrinfo *rai, hints;
@@ -46,6 +62,7 @@ rdma::Transport::Transport(bool server, const char *server_name) {
   ctx_->qp_count = DEFAULT_MAX_QP;
   ctx_->max_wr = DEFAULT_MAX_WR;
   ctx_->msg_length = DEFAULT_MSG_LENGTH;
+  ctx_->max_num_shards = max_num_shards;
 
   hints.ai_port_space = RDMA_PS_TCP;
   if (ctx_->server == true)
@@ -67,6 +84,12 @@ rdma::Transport::Transport(bool server, const char *server_name) {
   ctx_->recv_buf = (char *)malloc(ctx_->msg_length);
   memset(ctx_->recv_buf, 0, ctx_->msg_length);
 
+  ctx_->bufs = (char **)calloc(ctx_->qp_count, sizeof(char *));
+  ctx_->buf_mrs =
+      (struct ibv_mr **)calloc(ctx_->qp_count, sizeof(struct ibv_mr));
+  ctx_->num_connnected_client =
+      (size_t *)calloc(ctx_->qp_count, sizeof(size_t));
+
   ret = init_resources(rai);
   if (ret) {
     printf("init_resources returned %d\n", ret);
@@ -77,6 +100,7 @@ rdma::Transport::Transport(bool server, const char *server_name) {
 }
 
 rdma::Transport::Transport(bool server, const char *server_name, size_t rm_size,
+                           size_t shard_id, size_t client_qp_count,
                            size_t local_buf_size) {
   int ret;
   struct rdma_addrinfo *rai, hints;
@@ -87,9 +111,10 @@ rdma::Transport::Transport(bool server, const char *server_name, size_t rm_size,
   memset(ctx_, 0, sizeof(rdma::Context));
   memset(&hints, 0, sizeof(struct rdma_addrinfo));
   ctx_->server = server;
+  ctx_->shard_id = shard_id;
   ctx_->server_name = strdup(server_name);
   ctx_->server_port = DEFAULT_PORT;
-  ctx_->qp_count = DEFAULT_MAX_CLIENT_QP;
+  ctx_->qp_count = client_qp_count;
   ctx_->max_wr = DEFAULT_MAX_WR;
   ctx_->msg_length = DEFAULT_MSG_LENGTH;
   ctx_->local_buf_size = local_buf_size;
@@ -114,10 +139,14 @@ rdma::Transport::Transport(bool server, const char *server_name, size_t rm_size,
   memset(ctx_->send_buf, 0, ctx_->msg_length);
   ctx_->recv_buf = (char *)malloc(ctx_->msg_length);
   memset(ctx_->recv_buf, 0, ctx_->msg_length);
-  ctx_->buf = (char *)malloc(ctx_->local_buf_size);
-  memset(ctx_->buf, 0, ctx_->local_buf_size);
 
-  memcpy(ctx_->buf, (char *)"Hello World", 11);
+  ctx_->bufs = (char **)calloc(ctx_->qp_count, sizeof(char *));
+  for (int i = 0; i < ctx_->qp_count; i++) {
+    ctx_->bufs[i] = (char *)malloc(ctx_->local_buf_size);
+    memset(ctx_->bufs[i], 0, ctx_->local_buf_size);
+  }
+  ctx_->buf_mrs =
+      (struct ibv_mr **)calloc(ctx_->qp_count, sizeof(struct ibv_mr));
 
   ret = init_resources(rai);
   if (ret) {
@@ -126,6 +155,9 @@ rdma::Transport::Transport(bool server, const char *server_name, size_t rm_size,
   }
 
   ret = connect_server(rai);
+  if (ret) {
+    throw std::runtime_error("connect_server failed");
+  }
 }
 
 rdma::Transport::~Transport() {
@@ -202,15 +234,19 @@ int rdma::Transport::init_resources(struct rdma_addrinfo *rai) {
     VERB_ERR("rdma_reg_msgs send_mr", -1);
     return -1;
   }
-  if (ctx_->buf) {
-    assert(ctx_->server == false && "only client will init the buf here");
-    int mr_flags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE |
-                   IBV_ACCESS_REMOTE_READ;
-    ctx_->buf_mr =
-        ibv_reg_mr(ctx_->srq_id->pd, ctx_->buf, ctx_->local_buf_size, mr_flags);
-    if (!ctx_->buf_mr) {
-      VERB_ERR("rdma_reg_msgs buf_mr", -1);
-      return -1;
+  if (ctx_->bufs) {
+    for (i = 0; i < ctx_->qp_count; i++) {
+      if (ctx_->bufs[i]) {
+        assert(ctx_->server == false && "only client will init the buf here");
+        int mr_flags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE |
+                       IBV_ACCESS_REMOTE_READ;
+        ctx_->buf_mrs[i] = ibv_reg_mr(ctx_->srq_id->pd, ctx_->bufs[i],
+                                      ctx_->local_buf_size, mr_flags);
+        if (!ctx_->buf_mrs[i]) {
+          VERB_ERR("rdma_reg_msgs buf_mr", -1);
+          return -1;
+        }
+      }
     }
   }
   /* Create our shared receive queue */
@@ -292,14 +328,24 @@ void rdma::Transport::destroy_resources() {
     rdma_dereg_mr(ctx_->recv_mr);
   if (ctx_->send_mr)
     rdma_dereg_mr(ctx_->send_mr);
-  if (ctx_->buf_mr)
-    rdma_dereg_mr(ctx_->buf_mr);
+  if (ctx_->buf_mrs) {
+    for (i = 0; i < ctx_->qp_count; i++) {
+      if (ctx_->buf_mrs[i])
+        rdma_dereg_mr(ctx_->buf_mrs[i]);
+    }
+    free(ctx_->buf_mrs);
+  }
   if (ctx_->recv_buf)
     free(ctx_->recv_buf);
   if (ctx_->send_buf)
     free(ctx_->send_buf);
-  if (ctx_->buf)
-    free(ctx_->buf);
+  if (ctx_->bufs) {
+    for (i = 0; i < ctx_->qp_count; i++) {
+      if (ctx_->bufs[i])
+        free(ctx_->bufs[i]);
+    }
+    free(ctx_->bufs);
+  }
   if (ctx_->srq_cq)
     ibv_destroy_cq(ctx_->srq_cq);
   if (ctx_->event_channel)
@@ -312,6 +358,9 @@ void rdma::Transport::destroy_resources() {
   }
   if (ctx_->server_name) {
     free(ctx_->server_name);
+  }
+  if (ctx_->num_connnected_client) {
+    free(ctx_->num_connnected_client);
   }
   delete ctx_;
 }
@@ -399,9 +448,9 @@ int rdma::Transport::connect_server(struct rdma_addrinfo *rai) {
   struct ibv_qp_init_attr attr;
 
   assert(ctx_->server == false);
-  assert(ctx_->qp_count == 1 && "only support 1 qp for each client now");
 
   for (int i = 0; i < ctx_->qp_count; i++) {
+    std::lock_guard<std::mutex> lock(mutex_);
     memset(&attr, 0, sizeof(attr));
     attr.qp_context = ctx_;
     attr.cap.max_send_wr = ctx_->max_wr;
@@ -429,11 +478,14 @@ int rdma::Transport::connect_server(struct rdma_addrinfo *rai) {
     }
 
     ctx_->id_states[i] = RDMA_ID_STATE_CONNECTED;
+    qp_num_2_conn_idx.insert(std::make_pair(ctx_->conn_ids[i]->qp->qp_num, i));
 
     // TODO: this information exchange maybe redundant (in the loop)
     // send requested remote memory information
     ptr = ctx_->send_buf;
     memset(ptr, 0, ctx_->msg_length);
+    memcpy(ptr, &ctx_->shard_id, sizeof(ctx_->shard_id));
+    ptr += sizeof(ctx_->shard_id);
     memcpy(ptr, &ctx_->rm_size, sizeof(ctx_->rm_size));
     ret = send(ctx_->conn_ids[i], ctx_->send_buf, ctx_->msg_length,
                ctx_->send_mr);
@@ -449,16 +501,22 @@ int rdma::Transport::connect_server(struct rdma_addrinfo *rai) {
       VERB_ERR("recv", ret);
       return ret;
     }
-    printf("[%-16s] connected! (ctx_->conn_ids[%d]=%p)\n", "Info", i,
-           ctx_->conn_ids[i]);
+    printf("[%-16s] connected! (ctx_->conn_ids[%d]=%p, qp_num=%u)\n", "Info", i,
+           ctx_->conn_ids[i], ctx_->conn_ids[i]->qp->qp_num);
 
-    ptr = ctx_->recv_buf;
-    memcpy(&ctx_->rm_rkey, ptr, sizeof(ctx_->rm_rkey));
-    ptr += sizeof(ctx_->rm_rkey);
-    memcpy(&ctx_->rm_addr, ptr, sizeof(ctx_->rm_addr));
-    ptr += sizeof(ctx_->rm_addr);
-    printf("[%-16s] remote memory info: rkey: 0x%x, addr: 0x%lx, size: %lu\n",
-           "Info", ctx_->rm_rkey, ctx_->rm_addr, ctx_->rm_size);
+    // TODO: DEBUG: wzh: here is an bug
+    if (i == 0) {
+      ptr = ctx_->recv_buf;
+      memcpy(&ctx_->rm_rkey, ptr, sizeof(ctx_->rm_rkey));
+      ptr += sizeof(ctx_->rm_rkey);
+      memcpy(&ctx_->rm_addr, ptr, sizeof(ctx_->rm_addr));
+      ptr += sizeof(ctx_->rm_addr);
+    }
+    printf(
+        "[%-16s] remote memory info: shard_id: %lu, rkey: 0x%x, addr: 0x%lx, "
+        "size: %lu\n",
+        "Info", ctx_->shard_id, ctx_->rm_rkey, ctx_->rm_addr, ctx_->rm_size);
+    assert(ctx_->rm_addr);
   }
 
   return 0;
@@ -473,6 +531,7 @@ int rdma::Transport::handle_connect_request(struct rdma_cm_event *cm_event) {
   int ret;
   struct ibv_qp_init_attr qp_attr;
   struct rdma_cm_id *conn_id;
+  char *ptr;
 
   // TODO: return error instead of assert
   int next_conn_ids_idx = 0;
@@ -500,6 +559,8 @@ int rdma::Transport::handle_connect_request(struct rdma_cm_event *cm_event) {
   qp_attr.srq = ctx_->srq;
   qp_attr.sq_sig_all = 0;
   {
+    // NOTE: don't move this lock block, it won't hurt performance because this
+    // is only used in initializing stage
     std::lock_guard<std::mutex> lock(mutex_);
     assert(ctx_->id_states[next_conn_ids_idx] == RDMA_ID_STATE_FREE);
     ctx_->conn_ids[next_conn_ids_idx] = cm_event->id;
@@ -522,44 +583,63 @@ int rdma::Transport::handle_connect_request(struct rdma_cm_event *cm_event) {
     qp_num_2_conn_idx.insert(
         std::make_pair(conn_id->qp->qp_num, next_conn_ids_idx));
     ++next_conn_ids_idx;
+
+    // recv requested remote memory information
+    ret = recv(conn_id, ctx_->recv_buf, ctx_->msg_length, ctx_->recv_mr);
+    if (ret) {
+      VERB_ERR("recv", ret);
+      return ret;
+    }
+    ptr = ctx_->recv_buf;
+
+    size_t shard_id, rm_size;
+    memcpy(&shard_id, ptr, sizeof(shard_id));
+    if (shard_id >= ctx_->max_num_shards) {
+      printf("shard_id=%lu, max_num_shards=%lu\n", shard_id, ctx_->max_num_shards);
+      throw std::runtime_error("shard_id is out of range");
+    }
+    ptr += sizeof(sizeof(shard_id));
+    memcpy(&rm_size, ptr, sizeof(rm_size));
+    qp_num_2_shard_id.insert(
+        std::make_pair(conn_id->qp->qp_num, next_conn_ids_idx));
+
+    // allocate remote memory
+    if (!ctx_->bufs[shard_id]) {
+      ctx_->bufs[shard_id] = (char *)malloc(rm_size);
+      memset(ctx_->bufs[shard_id], 0, rm_size);
+      int mr_flags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE |
+                     IBV_ACCESS_REMOTE_READ;
+      ctx_->buf_mrs[shard_id] =
+          ibv_reg_mr(ctx_->srq_id->pd, ctx_->bufs[shard_id], rm_size, mr_flags);
+      if (!ctx_->buf_mrs[shard_id]) {
+        VERB_ERR("rdma_reg_msgs buf_mr", -1);
+        return -1;
+      }
+      ctx_->num_connnected_client[shard_id]++;
+      assert(rm_size == ctx_->buf_mrs[shard_id]->length);
+    } else {
+      assert(ctx_->bufs[shard_id] && ctx_->buf_mrs[shard_id]);
+    }
+
+    // send back remote memory information
+    ptr = ctx_->send_buf;
+    memset(ptr, 0, ctx_->msg_length);
+    memcpy(ptr, &ctx_->buf_mrs[shard_id]->rkey, sizeof(ctx_->rm_rkey));
+    ptr += sizeof(ctx_->rm_rkey);
+    uint64_t addr = (uint64_t)ctx_->buf_mrs[shard_id]->addr;
+    memcpy(ptr, &addr, sizeof(ctx_->rm_addr));
+
+    ret = send(conn_id, ctx_->send_buf, ctx_->msg_length, ctx_->send_mr);
+    if (ret) {
+      VERB_ERR("send", ret);
+      return ret;
+    }
+
+    printf(
+        "[%-16s] sent rm info to %u (rkey=0x%x, rm_addr=0x%lx, rm_size=%lu)\n",
+        "Info", conn_id->qp->qp_num, ctx_->buf_mrs[shard_id]->rkey, addr,
+        ctx_->buf_mrs[shard_id]->length);
   }
-
-  // recv requested remote memory information
-  ret = recv(conn_id, ctx_->recv_buf, ctx_->msg_length, ctx_->recv_mr);
-  if (ret) {
-    VERB_ERR("recv", ret);
-    return ret;
-  }
-  memcpy(&ctx_->rm_size, ctx_->recv_buf, sizeof(ctx_->rm_size));
-
-  // allocate remote memory
-  ctx_->buf = (char *)malloc(ctx_->rm_size);
-  memset(ctx_->buf, 0, ctx_->rm_size);
-  int mr_flags =
-      IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ;
-  ctx_->buf_mr =
-      ibv_reg_mr(ctx_->srq_id->pd, ctx_->buf, ctx_->rm_size, mr_flags);
-  if (!ctx_->buf_mr) {
-    VERB_ERR("rdma_reg_msgs buf_mr", -1);
-    return -1;
-  }
-
-  // send back remote memory information
-  char *ptr = ctx_->send_buf;
-  memset(ptr, 0, ctx_->msg_length);
-  memcpy(ptr, &ctx_->buf_mr->rkey, sizeof(ctx_->rm_rkey));
-  ptr += sizeof(ctx_->rm_rkey);
-  uint64_t addr = (uint64_t)ctx_->buf_mr->addr;
-  memcpy(ptr, &addr, sizeof(ctx_->rm_addr));
-
-  ret = send(conn_id, ctx_->send_buf, ctx_->msg_length, ctx_->send_mr);
-  if (ret) {
-    VERB_ERR("send", ret);
-    return ret;
-  }
-
-  printf("[%-16s] sent rm info to %u (rkey=0x%x, rm_addr=0x%lx, rm_size=%lu)\n",
-         "Info", conn_id->qp->qp_num, ctx_->buf_mr->rkey, addr, ctx_->rm_size);
 
   return 0;
 }
@@ -608,22 +688,30 @@ int rdma::Transport::handle_timewait_exit(struct rdma_cm_event *cm_event) {
     VERB_ERR("rdma_ack_cm_event", ret);
     return ret;
   }
-
-  uint32_t qp_num = conn_id->qp->qp_num;
-  size_t conn_idx = qp_num_2_conn_idx[qp_num];
   {
+    std::lock_guard<std::mutex> lock(mutex_);
+    uint32_t qp_num = conn_id->qp->qp_num;
+    size_t conn_idx = qp_num_2_conn_idx[qp_num];
     assert(ctx_->id_states[qp_num_2_conn_idx[qp_num]] ==
            RDMA_ID_STATE_DISCONNECTED);
-    std::lock_guard<std::mutex> lock(mutex_);
     ctx_->id_states[conn_idx] = RDMA_ID_STATE_TIMEWAIT_EXITED;
     rdma_destroy_qp(conn_id);
     ctx_->id_states[conn_idx] = RDMA_ID_STATE_QP_DESTROYED;
     rdma_destroy_id(conn_id);
     ctx_->id_states[conn_idx] = RDMA_ID_STATE_ID_DESTROYED;
     printf("[%-16s] disconnected! (qp_num=%u)\n", "Connection", qp_num);
-    ctx_->id_states[conn_idx] = RDMA_ID_STATE_FREE;
     ctx_->conn_ids[conn_idx] = nullptr;
     qp_num_2_conn_idx.erase(qp_num);
+    size_t shard_id = qp_num_2_shard_id[qp_num];
+    ctx_->num_connnected_client[shard_id]--;
+    // TODO: should free here
+    // assert(ctx_->bufs[shard_id]);
+    // if (ctx_->num_connnected_client[shard_id] == 0) {
+    //   free(ctx_->bufs[shard_id]);
+    //   ibv_dereg_mr(ctx_->buf_mrs[shard_id]);
+    //   ctx_->buf_mrs[shard_id] = nullptr;
+    // }
+    ctx_->id_states[conn_idx] = RDMA_ID_STATE_FREE;
     printf("[%-16s] freed! (qp_num=%u)\n", "Connection", qp_num);
   }
 
@@ -637,7 +725,8 @@ int rdma::Transport::handle_timewait_exit(struct rdma_cm_event *cm_event) {
  */
 int rdma::Transport::read_rm(rdma_cm_id *cm_id, char *lm_addr, size_t lm_length,
                              struct ibv_mr *lm_mr, uint64_t rm_addr,
-                             uint32_t rm_rkey, AsyncRequest *async_request) {
+                             uint32_t rm_rkey,
+                             RDMAAsyncRequest *async_request) {
   int ret, ne;
   struct ibv_wc wc = {};
 
@@ -647,17 +736,24 @@ int rdma::Transport::read_rm(rdma_cm_id *cm_id, char *lm_addr, size_t lm_length,
   while (!ctx_->id_states[conn_idx].compare_exchange_weak(
       connected_state, RDMA_ID_STATE_READING))
     ;
+  printf("cm_id=%p, change to RDMA_ID_STATE_READING(%d)\n", cm_id,
+         ctx_->id_states[conn_idx].load());
 #endif
 
   ret = rdma_post_read(cm_id, /*context=*/nullptr, lm_addr, lm_length, lm_mr,
                        /*flags=*/IBV_SEND_SIGNALED, rm_addr, rm_rkey);
   if (ret) {
     VERB_ERR("rdma_post_read", ret);
+    throw(std::runtime_error("rdma_post_read failed"));
     return ret;
   }
-  // printf("[%-16s] post read:  rkey=0x%x, rm_addr=0x%lx, length=%lu\n",
-  // "Info",
-  //        rm_rkey, rm_addr, lm_length);
+  assert(ctx_->rm_addr <= rm_addr);
+  assert(rm_addr + lm_length <= ctx_->rm_addr + ctx_->rm_size);
+  // printf(
+  //     "[%-16s] post read: rkey=0x%x, length=%lu, , region [0x%lu, 0x%lu) in "
+  //     "[0x%lu, 0x%lu), async=%p\n",
+  //     "Info", rm_rkey, lm_length, rm_addr, rm_addr + lm_length,
+  //     ctx_->rm_addr, ctx_->rm_addr + ctx_->rm_size, async_request);
 
   if (async_request != nullptr) {
 #ifdef CHECK_RDMA_CM_ID_WORKING
@@ -673,17 +769,21 @@ int rdma::Transport::read_rm(rdma_cm_id *cm_id, char *lm_addr, size_t lm_length,
       ne = ibv_poll_cq(cm_id->send_cq, 1, &wc);
       if (ne < 0) {
         VERB_ERR("ibv_poll_cq", ne);
+        throw std::runtime_error("ibv_poll_cq failed");
         return ne;
       }
 
       if (wc.status != IBV_WC_SUCCESS) {
         VERB_ERR("ibv_poll_cq", wc.status);
+        throw std::runtime_error("ibv_poll_cq failed");
         return wc.status;
       }
     } while (ne == 0);
 
 #ifdef CHECK_RDMA_CM_ID_WORKING
     ctx_->id_states[conn_idx] = RDMA_ID_STATE_CONNECTED;
+    printf("cm_id=%p, change to RDMA_ID_STATE_CONNECTED(%d)\n", cm_id,
+           ctx_->id_states[conn_idx].load());
 #endif
   }
 
@@ -698,16 +798,19 @@ int rdma::Transport::read_rm(rdma_cm_id *cm_id, char *lm_addr, size_t lm_length,
 int rdma::Transport::write_rm(rdma_cm_id *cm_id, char *lm_addr,
                               size_t lm_length, struct ibv_mr *lm_mr,
                               uint64_t rm_addr, uint32_t rm_rkey,
-                              AsyncRequest *async_request) {
+                              RDMAAsyncRequest *async_request) {
   int ret, ne;
   struct ibv_wc wc = {};
 
 #ifdef CHECK_RDMA_CM_ID_WORKING
   size_t conn_idx = qp_num_2_conn_idx[cm_id->qp->qp_num];
+  assert(conn_idx == 1);
   enum rdma::rdma_id_state connected_state = RDMA_ID_STATE_WRITING;
   while (!ctx_->id_states[conn_idx].compare_exchange_weak(
       connected_state, RDMA_ID_STATE_WRITING))
     ;
+  printf("cm_id=%p, change to RDMA_ID_STATE_WRITING(%d)\n", cm_id,
+         ctx_->id_states[conn_idx].load());
 #endif
 
   ret = rdma_post_write(cm_id, /*context=*/nullptr, lm_addr, lm_length, lm_mr,
@@ -716,9 +819,13 @@ int rdma::Transport::write_rm(rdma_cm_id *cm_id, char *lm_addr,
     VERB_ERR("rdma_post_write", ret);
     return ret;
   }
-  // printf("[%-16s] post write: rkey=0x%x, rm_addr=0x%lx, length=%lu\n",
-  // "Info",
-  //        rm_rkey, rm_addr, lm_length);
+  assert(ctx_->rm_addr <= rm_addr);
+  assert(rm_addr + lm_length <= ctx_->rm_addr + ctx_->rm_size);
+  // printf(
+  //     "[%-16s] post write: rkey=0x%x, length=%lu, region [0x%lu, 0x%lu) in "
+  //     "[0x%lu, 0x%lu), async=%p\n",
+  //     "Info", rm_rkey, lm_length, rm_addr, rm_addr + lm_length,
+  //     ctx_->rm_addr, ctx_->rm_addr + ctx_->rm_size, async_request);
 
   if (async_request != nullptr) {
 #ifdef CHECK_RDMA_CM_ID_WORKING
@@ -745,6 +852,8 @@ int rdma::Transport::write_rm(rdma_cm_id *cm_id, char *lm_addr,
 
 #ifdef CHECK_RDMA_CM_ID_WORKING
     ctx_->id_states[conn_idx] = RDMA_ID_STATE_CONNECTED;
+    printf("cm_id=%p, change to RDMA_ID_STATE_CONNECTED(%d)\n", cm_id,
+           ctx_->id_states[conn_idx].load());
 #endif
   }
 

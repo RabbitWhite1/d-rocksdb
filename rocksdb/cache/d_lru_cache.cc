@@ -115,7 +115,8 @@ DLRUCacheShard::DLRUCacheShard(size_t capacity, bool strict_capacity_limit,
                                bool use_adaptive_mutex,
                                CacheMetadataChargePolicy metadata_charge_policy,
                                int max_upper_hash_bits,
-                               const std::shared_ptr<RemoteMemory>&)
+                               const std::shared_ptr<RemoteMemory>&,
+                               const size_t shard_id)
     : capacity_(0),
       high_pri_pool_usage_(0),
       strict_capacity_limit_(strict_capacity_limit),
@@ -125,7 +126,8 @@ DLRUCacheShard::DLRUCacheShard(size_t capacity, bool strict_capacity_limit,
       table_(max_upper_hash_bits),
       usage_(0),
       lm_lru_usage_(0),
-      mutex_(use_adaptive_mutex) {
+      mutex_(use_adaptive_mutex),
+      shard_id_(shard_id) {
   set_metadata_charge_policy(metadata_charge_policy);
   // Make empty circular linked list
   lm_lru_.next = &lm_lru_;
@@ -135,12 +137,12 @@ DLRUCacheShard::DLRUCacheShard(size_t capacity, bool strict_capacity_limit,
   rm_lru_.prev = &rm_lru_;
   SetCapacity(capacity);
   if (rm_ratio > 0.0) {
-    std::string server_ip = "10.0.0.6";
+    std::string server_ip = "10.0.0.5";
     // remote_memory_ = std::make_shared<RemoteMemory>(
     //     new FFBasedRemoteMemoryAllocator(), server_ip, capacity * rm_ratio);
     remote_memory_ = std::make_shared<RemoteMemory>(
         new BlockBasedRemoteMemoryAllocator(4096ul), server_ip,
-        capacity * rm_ratio);
+        capacity * rm_ratio, shard_id_);
   } else {
     remote_memory_ = nullptr;
   }
@@ -339,19 +341,23 @@ void DLRUCacheShard::EvictFromLRU(size_t charge,
 
 void DLRUCacheShard::EvictFromLMLRU(
     size_t charge, autovector<DLRUHandle*>* evicted_from_lm_list) {
+  // assert: will later put into RM
   while ((lm_usage_ + charge) > lm_capacity_ && lm_lru_.next != &lm_lru_) {
     DLRUHandle* old = lm_lru_.next;
     // DLRU list contains only elements which can be evicted
     assert(old->InCache() && !old->HasRefs());
     LMLRU_Remove(old);
-    old->SetEvictingToRM(true);
     // evicting from local to remote, so usage didn't change,
     // only when evicting from remote, total usage changes (see EvictFromRMLRU)
     old->next = old->prev = nullptr;
-    size_t old_total_charge = old->CalcTotalCharge(metadata_charge_policy_);
-    assert(lm_usage_ >= old_total_charge);
-    usage_ -= old_total_charge;
-    lm_usage_ -= old_total_charge;
+    // NOTE: we actually only evict value to remote, so use `slice_size` instead
+    // of `charge`
+    // size_t old_total_charge = old->CalcTotalCharge(metadata_charge_policy_);
+    size_t old_slice_size = reinterpret_cast<Block*>(old->value)->size();
+    assert(usage_ >= old_slice_size);
+    assert(lm_usage_ >= old_slice_size);
+    usage_ -= old_slice_size;
+    lm_usage_ -= old_slice_size;
     evicted_from_lm_list->push_back(old);
   }
 }
@@ -376,62 +382,105 @@ void DLRUCacheShard::EvictFromRMLRUAndFreeHandle(size_t charge) {
     table_.Remove(old->key(), old->hash);
     old->SetInCache(false);
     size_t old_total_charge = old->CalcTotalCharge(metadata_charge_policy_);
+    size_t old_slice_size = old->slice_size;
     // only when evicting from remote, total usage changes
     assert(usage_ >= old_total_charge);
     usage_ -= old_total_charge;
-    assert(rm_usage_ >= old_total_charge);
-    rm_usage_ -= old_total_charge;
+    assert(rm_usage_ >= old_slice_size);
+    rm_usage_ -= old_slice_size;
+    assert(lm_usage_ >= (old_total_charge - old_slice_size));
+    lm_usage_ -= (old_total_charge - old_slice_size);
     assert(old->IsLocal() == false);
     remote_memory_->rmfree((RMRegion*)old->value);
     old->value = nullptr;
     old->Free();
     ++num_evicted;
+    // printf(
+    //     "[EvictFromRMLRUAndFreeHandle] (%lu, %lu), lm_usage=%lu, "
+    //     "rm_usage=%lu\n",
+    //     old_total_charge, old_slice_size, lm_usage_, rm_usage_);
   } while (rm_lru_.next != rm_lru_.prev);
   // printf("evcited from rm, size: %lu\n", num_evicted);
 }
 
-void DLRUCacheShard::MoveValueToRM(DLRUHandle* e) {
+void DLRUCacheShard::MoveValueToRM(DLRUHandle* e,
+                                   RMAsyncRequest* rm_async_request) {
   // assert(e->InCache()); // not really. if again evicted from remote memory.
   assert(e->IsLocal());
+  assert(!e->IsMovingToRM() and !e->IsFetchingFromRM());
   assert(remote_memory_);
   assert(e->info_.helper && "if using rm, should use helper with size_cb");
-  // e->slice_size = e->info_.helper->size_cb(e->value);
+  std::chrono::high_resolution_clock::time_point begin, end;
+
   e->slice_size = reinterpret_cast<Block*>(e->value)->size();
   RMRegion* rm_region = remote_memory_->rmalloc(e->slice_size);
   uint64_t rm_addr = rm_region->addr;
   assert(rm_addr > 0 && "should be able to allocate enough memory");
   // TODO: the `reinterpret_cast` is walkaroung. should use helper function.
-  remote_memory_->write(rm_addr,
-                        (void*)(reinterpret_cast<Block*>(e->value)->data()),
-                        e->slice_size);
-  e->FreeValue();
-  e->value = (void*)rm_region;
+
+  begin = std::chrono::high_resolution_clock::now();
+  int ret = remote_memory_->write(
+      rm_addr, (void*)(reinterpret_cast<Block*>(e->value)->data()),
+      e->slice_size, rm_async_request);
+  if (ret != 0) {
+    throw std::runtime_error("write failed");
+  }
+  end = std::chrono::high_resolution_clock::now();
+  // printf("\t\twrite to rm[0x%lx, 0x%lx) (async: %p) took %ld ns\n", rm_addr,
+  //        e->slice_size, rm_async_request,
+  //        std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+  //            .count());
+  if (rm_async_request == nullptr) {
+    e->FreeValue();
+    e->value = (void*)rm_region;
+  } else {
+    e->SetMovingToRM(true);
+    rm_async_request->target_buf = e->value;
+    rm_async_request->rm_region = rm_region;
+    e->value = (void*)rm_async_request;
+  }
 }
 
 void DLRUCacheShard::FetchValueFromRM(
-    DLRUHandle* e, const ShardedCache::CreateCallback& create_cb) {
+    DLRUHandle* e, const ShardedCache::CreateCallback& create_cb,
+    RMAsyncRequest* rm_async_request) {
   std::chrono::high_resolution_clock::time_point begin, end;
   assert(e->InCache());
   assert(!e->IsLocal());
+  assert(!e->IsMovingToRM() and !e->IsFetchingFromRM());
   assert(remote_memory_);
   RMRegion* rm_region = (RMRegion*)e->value;
   uint64_t rm_addr = rm_region->addr;
+
   begin = std::chrono::high_resolution_clock::now();
-  remote_memory_->read(rm_addr, /*buf=*/nullptr, e->slice_size);
+  int ret = remote_memory_->read(rm_addr, /*buf=*/nullptr, e->slice_size,
+                                 rm_async_request);
+  if (ret != 0) {
+    throw std::runtime_error("read failed");
+  }
   end = std::chrono::high_resolution_clock::now();
-  // printf("\t\tread from rm took %ld ns\n",
+  // printf("\t\tread from rm[0x%lx, 0x%lx) (async: %p) took %ld ns\n", rm_addr,
+  //        e->slice_size, rm_async_request,
   //        std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
   //            .count());
-  // TODO: should return size as charge?
-  size_t ret_charge = 0;
-  begin = std::chrono::high_resolution_clock::now();
-  Status s = create_cb(remote_memory_->get_buf(), e->slice_size, &e->value, &ret_charge);
-  end = std::chrono::high_resolution_clock::now();
-  // printf("\t\tcreate cb took %ld ns\n",
-  //        std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
-  //            .count());
-  assert(s.ok());
-  remote_memory_->rmfree(rm_region);
+
+  if (rm_async_request == nullptr) {
+    // TODO: should return size as charge?
+    size_t ret_charge = 0;
+    begin = std::chrono::high_resolution_clock::now();
+    Status s = create_cb(remote_memory_->get_read_buf(), e->slice_size,
+                         &e->value, &ret_charge);
+    end = std::chrono::high_resolution_clock::now();
+    // printf("\t\tcreate cb took %ld ns\n",
+    //        std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+    //            .count());
+    assert(s.ok());
+    remote_memory_->rmfree(rm_region);
+  } else {
+    e->SetFetchingFromRM(true);
+    rm_async_request->rm_region = rm_region;
+    e->value = (void*)rm_async_request;
+  }
 }
 
 void DLRUCacheShard::SetCapacity(size_t capacity) {
@@ -474,27 +523,35 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
     // is freed or the rm_lru list is empty
     if (remote_memory_) {
       EvictFromLMLRU(total_charge, &evict_to_rm_list);
+      // if (evict_to_rm_list.size() > 0) {
+      //   printf(
+      //       "[InsertItem] evict %lu from lm lru, lm_usage=%lu,
+      //       rm_usage=%lu\n", total_charge, lm_usage_, rm_usage_);
+      // }
       // printf("[insert] evict from lm list, size=%lu\n",
       // evict_to_rm_list.size());
       for (auto lm_entry : evict_to_rm_list) {
-        lm_entry->SetEvictingToRM(true);
         // 1. evict rm_entry from RM to free enough space for this lm_entry
-        EvictFromRMLRUAndFreeHandle(
-            reinterpret_cast<Block*>(lm_entry->value)->size());
+        // size_t lm_entry_total_charge =
+        //     lm_entry->CalcTotalCharge(metadata_charge_policy_);
+        size_t lm_entry_slice_size =
+            reinterpret_cast<Block*>(lm_entry->value)->size();
+        EvictFromRMLRUAndFreeHandle(lm_entry_slice_size);
         // TODO: if rm is full, and cannot evict enough space for putting entry
         //     from lm, then we directly evict lm_entry
         // 2. insert lm_entry to RM
-        size_t lm_entry_charge =
-            lm_entry->CalcTotalCharge(metadata_charge_policy_);
         MoveValueToRM(lm_entry);
-        usage_ += lm_entry_charge;  // it is discounted when EvictFromLMLRU
-        rm_usage_ += lm_entry_charge;
+        usage_ += lm_entry_slice_size;  // it is discounted when EvictFromLMLRU
+        rm_usage_ += lm_entry_slice_size;
         // 3. insert into rm_lru
         lm_entry->SetInCache(true);  // it is set to `false` when EvictFromLMLRU
         RMLRU_Insert(lm_entry);
         assert(lm_entry->IsLocal() == true);
         lm_entry->SetLocal(false);
-        lm_entry->SetEvictingToRM(false);
+        // printf(
+        //     "[InsertItem] insert (%lu, %lu) into rm lru, lm_usage=%lu, "
+        //     "rm_usage=%lu\n",
+        //     total_charge, lm_entry_slice_size, lm_usage_, rm_usage_);
       }
     } else {
       EvictFromLRU(total_charge, &last_reference_list);
@@ -548,8 +605,11 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
               old->FreeValue();
               old->Free();
             } else {
+              size_t old_slice_size = e->slice_size;
+              assert(lm_usage_ >= (old_total_charge - old_slice_size));
               assert(rm_usage_ >= old_total_charge);
-              rm_usage_ -= old_total_charge;
+              lm_usage_ -= (old_total_charge - old_slice_size);
+              rm_usage_ -= old_slice_size;
               remote_memory_->rmfree((RMRegion*)old->value);
               old->Free();
             }
@@ -603,53 +663,109 @@ Cache::Handle* DLRUCacheShard::Lookup(
         assert(remote_memory_);
         // 1. remove from RMLRU and fetch value
         // The entry is in RMLRU since it's in hash and in remote memory
-        begin = std::chrono::high_resolution_clock::now();
         RMLRU_Remove(e);
-        size_t rm_entry_charge = e->CalcTotalCharge(metadata_charge_policy_);
-        rm_usage_ -= rm_entry_charge;
+        // size_t rm_entry_charge = e->CalcTotalCharge(metadata_charge_policy_);
+        size_t rm_entry_slice_size = e->slice_size;
+
         // fetch it from remote memory
-        FetchValueFromRM(e, create_cb);
-        end = std::chrono::high_resolution_clock::now();
-        // printf("\tfetch from rm took %ld ns\n",
+        RMAsyncRequest* fetch_req = new RMAsyncRequest();
+        // begin = std::chrono::high_resolution_clock::now();
+        FetchValueFromRM(e, create_cb, fetch_req);
+        // end = std::chrono::high_resolution_clock::now();
+        // printf("\trequest fetch from rm took %ld ns\n",
         //        std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
         //            .count());
-        e->slice_size = 0;
+
+        // begin = std::chrono::high_resolution_clock::now();
+        // Wait(e, create_cb);
+        // end = std::chrono::high_resolution_clock::now();
+        // printf("\twait fetch from rm took %ld ns\n",
+        //        std::chrono::duration_cast<std::chrono::nanoseconds>(end -
+        //        begin)
+        //            .count());
+
         // 2. evict to free enough space for this entry
         // TODO: codes below is duplicated, abstract it.
         autovector<DLRUHandle*> evict_to_rm_list;
-        autovector<DLRUHandle*> last_reference_list;
-        EvictFromLMLRU(rm_entry_charge, &evict_to_rm_list);
-        // printf("[lookup] evict from lm list, size=%lu\n",
-        // evict_to_rm_list.size());
-        for (auto lm_entry : evict_to_rm_list) {
-          begin = std::chrono::high_resolution_clock::now();
-          lm_entry->SetEvictingToRM(true);
-          // 1. evict rm_entry from RM to free enough space for this lm_entry
-          EvictFromRMLRUAndFreeHandle(
-              reinterpret_cast<Block*>(lm_entry->value)->size());
-          // 2. insert lm_entry to RM
-          size_t lm_entry_charge =
-              lm_entry->CalcTotalCharge(metadata_charge_policy_);
-          MoveValueToRM(lm_entry);
-          usage_ += lm_entry_charge;  // it is discounted when EvictFromLMLRU
-          rm_usage_ += lm_entry_charge;
-          // 3. insert into rm_lru
+        EvictFromLMLRU(rm_entry_slice_size, &evict_to_rm_list);
+
+        size_t num_evcit_to_rm = evict_to_rm_list.size();
+        size_t i = 0;
+        for (i = 0; i < num_evcit_to_rm; i++) {
+          auto lm_entry = evict_to_rm_list[i];
+          // 2.1. evict rm_entry from RM to free enough space for this lm_entry
+          size_t lm_entry_slice_size =
+              reinterpret_cast<Block*>(lm_entry->value)->size();
+
+          // begin = std::chrono::high_resolution_clock::now();
+          EvictFromRMLRUAndFreeHandle(lm_entry_slice_size);
+          // end = std::chrono::high_resolution_clock::now();
+          // printf(
+          //     "\tEvictFromRMLRUAndFreeHandle took %ld ns\n",
+          //     std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+          //         .count());
+
+          // 2.2. insert lm_entry to RM
+          // begin = std::chrono::high_resolution_clock::now();
+          RMAsyncRequest* move_req = new RMAsyncRequest();
+          MoveValueToRM(lm_entry, move_req);
+          // end = std::chrono::high_resolution_clock::now();
+          // printf(
+          //     "\trequest move to rm (size=%ld) took %ld ns\n",
+          //     lm_entry_slice_size,
+          //     std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+          //         .count());
+
+          // 2.3. wait for read request
+          if (i == 0) {
+            // begin = std::chrono::high_resolution_clock::now();
+            Wait(e, create_cb);
+            // end = std::chrono::high_resolution_clock::now();
+            // printf("\twait fetch from rm took %ld ns\n",
+            //        std::chrono::duration_cast<std::chrono::nanoseconds>(end -
+            //                                                             begin)
+            //            .count());
+          }
+
+          // 2.4. wait for write request
+          // begin = std::chrono::high_resolution_clock::now();
+          Wait(lm_entry);
+          // end = std::chrono::high_resolution_clock::now();
+          // printf(
+          //     "\twait move to rm took %ld ns\n",
+          //     std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+          //         .count());
+
+          // begin = std::chrono::high_resolution_clock::now();
+          usage_ +=
+              lm_entry_slice_size;  // it is discounted when EvictFromLMLRU
+          rm_usage_ += lm_entry_slice_size;
+          // insert into rm_lru
           lm_entry->SetInCache(
               true);  // it is set to `false` when EvictFromLMLRU
           RMLRU_Insert(lm_entry);
           assert(lm_entry->IsLocal() == true);
           lm_entry->SetLocal(false);
-          lm_entry->SetEvictingToRM(false);
-          end = std::chrono::high_resolution_clock::now();
+          // end = std::chrono::high_resolution_clock::now();
           // printf(
-          //     "\teach rm eviction and move to rm took %ld ns\n",
+          //     "\tsetup lm_entry took %ld ns\n",
           //     std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
           //         .count());
         }
-        // 3. setup rm_entry to be local
-        lm_usage_ += rm_entry_charge;
-        e->SetLocal(true);
+
+        if (i == 0) {
+          // begin = std::chrono::high_resolution_clock::now();
+          Wait(e, create_cb);
+          // end = std::chrono::high_resolution_clock::now();
+          // printf(
+          //     "\twait fetch from rm took %ld ns\n",
+          //     std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+          //         .count());
+        }
+
         *from_rm = true;
+
+        // putchar('\n');
       } else {
         *from_rm = false;
       }
@@ -739,8 +855,12 @@ bool DLRUCacheShard::Release(Cache::Handle* handle, bool force_erase) {
         assert(lm_usage_ >= total_charge);
         lm_usage_ -= total_charge;
       } else {
+        size_t slice_size = e->slice_size;
+        assert(slice_size > 0);
+        assert(lm_usage_ >= (total_charge - slice_size));
         assert(rm_usage_ >= total_charge);
-        rm_usage_ -= total_charge;
+        lm_usage_ -= (total_charge - slice_size);
+        rm_usage_ -= slice_size;
       }
     }
   }
@@ -789,7 +909,6 @@ Status DLRUCacheShard::Insert(const Slice& key, uint32_t hash, void* value,
   e->SetInCache(true);
   e->SetLocal(true);
   e->SetPriority(priority);
-  e->SetEvictingToRM(false);
   memcpy(e->key_data, key.data(), key.size());
 
   auto s = InsertItem(e, handle, /* free_handle_on_fail */ true);
@@ -801,41 +920,74 @@ Status DLRUCacheShard::Insert(const Slice& key, uint32_t hash, void* value,
   return s;
 }
 
-void DLRUCacheShard::Erase(const Slice& key, uint32_t hash) {
-  assert(false && "Not Debugged.");
-  DLRUHandle* e;
-  bool last_reference = false;
-  {
-    MutexLock l(&mutex_);
-    e = table_.Remove(key, hash);
-    if (e != nullptr) {
-      assert(e->InCache());
-      e->SetInCache(false);
-      if (!e->HasRefs()) {
-        // The entry is in DLRU since it's in hash and has no external
-        // references
-        LMLRU_Remove(e);
-        size_t total_charge = e->CalcTotalCharge(metadata_charge_policy_);
-        assert(usage_ >= total_charge);
-        usage_ -= total_charge;
-        assert(lm_usage_ >= total_charge);
-        lm_usage_ -= total_charge;
-        last_reference = true;
-      }
-    }
-  }
-
-  // Free the entry here outside of mutex for performance reasons
-  // last_reference will only be true if e != nullptr
-  if (last_reference) {
-    e->Free();
-  }
+void DLRUCacheShard::Erase(const Slice& /*key*/, uint32_t /*hash*/) {
+  assert(false && "Not Implemented");
 }
 
 bool DLRUCacheShard::IsReady(Cache::Handle* /*handle*/) {
   // TODO: check whether need this
-  assert(false && "Not Debugged.");
+  assert(false && "Not Implemented");
   return false;
+}
+
+void DLRUCacheShard::Wait(Cache::Handle* handle) {
+  std::chrono::high_resolution_clock::time_point begin, end;
+
+  DLRUHandle* e = reinterpret_cast<DLRUHandle*>(handle);
+  if (!e->IsMovingToRM()) {
+    throw "no need to moving";
+  }
+  RMAsyncRequest* rm_async_request = (RMAsyncRequest*)e->value;
+
+  begin = std::chrono::high_resolution_clock::now();
+  rm_async_request->wait();
+  rm_async_request->unlock_and_reset();
+
+  end = std::chrono::high_resolution_clock::now();
+  // printf("\t\twait moving to rm req %ld ns\n",
+  //        std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+  //            .count());
+
+  // set back the value pointing to the data, so that it can be FreeValue()d
+  e->value = rm_async_request->target_buf;
+  e->FreeValue();
+  e->value = (void*)rm_async_request->rm_region;
+
+  e->SetMovingToRM(false);
+
+  delete rm_async_request;
+}
+
+void DLRUCacheShard::Wait(DLRUHandle* handle,
+                          ShardedCache::CreateCallback create_cb) {
+  std::chrono::high_resolution_clock::time_point begin, end;
+  DLRUHandle* e = handle;
+  if (!e->IsFetchingFromRM()) {
+    throw "no need to wait fetching";
+  }
+  size_t ret_charge = 0;
+  RMAsyncRequest* rm_async_request = (RMAsyncRequest*)e->value;
+
+  begin = std::chrono::high_resolution_clock::now();
+  rm_async_request->wait();
+  Status s = create_cb(remote_memory_->get_read_buf(), e->slice_size, &e->value,
+                       &ret_charge);
+  rm_async_request->unlock_and_reset();
+
+  end = std::chrono::high_resolution_clock::now();
+  // printf("\t\twait fetching from rm req %ld ns\n",
+  //        std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+  //            .count());
+
+  assert(s.ok());
+  remote_memory_->rmfree(rm_async_request->rm_region);
+  rm_usage_ -= e->slice_size;
+  lm_usage_ += e->slice_size;
+  e->SetFetchingFromRM(false);
+  e->slice_size = 0;
+  e->SetLocal(true);
+
+  delete rm_async_request;
 }
 
 size_t DLRUCacheShard::GetUsage() const {
@@ -885,10 +1037,10 @@ DLRUCache::DLRUCache(size_t capacity, int num_shard_bits,
   printf("DLRUCache num_shards=%d, per_shard=%lu, rm_ratio=%lf\n", num_shards_,
          per_shard, rm_ratio);
   for (int i = 0; i < num_shards_; i++) {
-    new (&shards_[i])
-        DLRUCacheShard(per_shard, strict_capacity_limit, high_pri_pool_ratio,
-                       rm_ratio, use_adaptive_mutex, metadata_charge_policy,
-                       /* max_upper_hash_bits */ 32 - num_shard_bits, nullptr);
+    new (&shards_[i]) DLRUCacheShard(
+        per_shard, strict_capacity_limit, high_pri_pool_ratio, rm_ratio,
+        use_adaptive_mutex, metadata_charge_policy,
+        /* max_upper_hash_bits */ 32 - num_shard_bits, nullptr, /*shard_id=*/i);
   }
 }
 

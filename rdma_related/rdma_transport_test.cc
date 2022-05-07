@@ -1,6 +1,6 @@
-#include <iostream>
 #include "cache/remote_memory/rdma_transport.h"
 #include "cache/remote_memory/rdma_utils.h"
+#include <iostream>
 
 int main(int argc, char **argv) {
   int ret;
@@ -8,31 +8,25 @@ int main(int argc, char **argv) {
   if (argc > 1) {
     rdma::Transport(/*server=*/true, server_name);
   } else {
-    rdma::Transport transport(/*server=*/false, server_name);
+    rdma::Transport transport(/*server=*/false, server_name, 4096, 0, 2);
     const rdma::Context *ctx = transport.get_context();
-    for (int i = 0; i < 10; i++) {
-      int qp_idx = 0;
-      if (ret = transport.read_rm(ctx->conn_ids[qp_idx], ctx->buf,
-                                  ctx->msg_length, ctx->buf_mr, ctx->rm_addr,
-                                  ctx->rm_rkey)) {
-        VERB_ERR("read_rm", ret);
-        exit(ret);
-      }
-      memset(ctx->buf, 0, ctx->msg_length);
-      sprintf(ctx->buf, "Hello Hank! %d", i);
-      if (ret = transport.write_rm(ctx->conn_ids[qp_idx], ctx->buf,
-                                   strlen(ctx->buf), ctx->buf_mr, ctx->rm_addr,
-                                   ctx->rm_rkey)) {
-        VERB_ERR("write_rm", ret);
-        exit(ret);
-      }
-      if (ret = transport.read_rm(ctx->conn_ids[qp_idx], ctx->buf,
-                                  ctx->msg_length, ctx->buf_mr, ctx->rm_addr,
-                                  ctx->rm_rkey)) {
-        VERB_ERR("read_rm", ret);
-        exit(ret);
-      }
-      printf("read result: %s\n", ctx->buf);
-    }
+
+    std::string buf = "Hello World!\0";
+    rdma::RDMAAsyncRequest *rdma_async_request = new rdma::RDMAAsyncRequest;
+    transport.read_rm(ctx->conn_ids[0], ctx->bufs[0], ctx->msg_length,
+                      ctx->buf_mrs[0], ctx->rm_addr, ctx->rm_rkey,
+                      rdma_async_request);
+    rdma_async_request->wait();
+
+    memcpy(ctx->bufs[1], buf.c_str(), buf.size());
+    transport.write_rm(ctx->conn_ids[1], ctx->bufs[1], buf.size(),
+                      ctx->buf_mrs[1], ctx->rm_addr, ctx->rm_rkey,
+                      rdma_async_request);
+    rdma_async_request->wait();
+    
+    transport.read_rm(ctx->conn_ids[0], ctx->bufs[0], ctx->msg_length,
+                      ctx->buf_mrs[0], ctx->rm_addr, ctx->rm_rkey,
+                      rdma_async_request);
+    rdma_async_request->wait();
   }
 }
