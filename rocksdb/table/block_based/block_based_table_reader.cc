@@ -1538,7 +1538,7 @@ Status BlockBasedTable::MaybeReadBlockAndLoadToCache(
         // } else {
         //   printf(
         //       "GetDataBlockFromCache (lm) took %ld ns\n",
-        //       std::chrono::3duration_cast<std::chrono::nanoseconds>(end - begin)
+        //       std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
         //           .count());
         // }
         is_cache_hit = true;

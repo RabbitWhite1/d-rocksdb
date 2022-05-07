@@ -324,34 +324,25 @@ void rdma::Transport::destroy_resources() {
   if (ctx_->id_states) {
     free(ctx_->id_states);
   }
-  if (ctx_->recv_mr)
-    rdma_dereg_mr(ctx_->recv_mr);
-  if (ctx_->send_mr)
-    rdma_dereg_mr(ctx_->send_mr);
+  if (ctx_->recv_mr) rdma_dereg_mr(ctx_->recv_mr);
+  if (ctx_->send_mr) rdma_dereg_mr(ctx_->send_mr);
   if (ctx_->buf_mrs) {
     for (i = 0; i < ctx_->qp_count; i++) {
-      if (ctx_->buf_mrs[i])
-        rdma_dereg_mr(ctx_->buf_mrs[i]);
+      if (ctx_->buf_mrs[i]) rdma_dereg_mr(ctx_->buf_mrs[i]);
     }
     free(ctx_->buf_mrs);
   }
-  if (ctx_->recv_buf)
-    free(ctx_->recv_buf);
-  if (ctx_->send_buf)
-    free(ctx_->send_buf);
+  if (ctx_->recv_buf) free(ctx_->recv_buf);
+  if (ctx_->send_buf) free(ctx_->send_buf);
   if (ctx_->bufs) {
     for (i = 0; i < ctx_->qp_count; i++) {
-      if (ctx_->bufs[i])
-        free(ctx_->bufs[i]);
+      if (ctx_->bufs[i]) free(ctx_->bufs[i]);
     }
     free(ctx_->bufs);
   }
-  if (ctx_->srq_cq)
-    ibv_destroy_cq(ctx_->srq_cq);
-  if (ctx_->event_channel)
-    rdma_destroy_event_channel(ctx_->event_channel);
-  if (ctx_->srq_cq_channel)
-    ibv_destroy_comp_channel(ctx_->srq_cq_channel);
+  if (ctx_->srq_cq) ibv_destroy_cq(ctx_->srq_cq);
+  if (ctx_->event_channel) rdma_destroy_event_channel(ctx_->event_channel);
+  if (ctx_->srq_cq_channel) ibv_destroy_comp_channel(ctx_->srq_cq_channel);
   if (ctx_->srq_id) {
     rdma_destroy_srq(ctx_->srq_id);
     rdma_destroy_id(ctx_->srq_id);
@@ -595,13 +586,13 @@ int rdma::Transport::handle_connect_request(struct rdma_cm_event *cm_event) {
     size_t shard_id, rm_size;
     memcpy(&shard_id, ptr, sizeof(shard_id));
     if (shard_id >= ctx_->max_num_shards) {
-      printf("shard_id=%lu, max_num_shards=%lu\n", shard_id, ctx_->max_num_shards);
+      printf("shard_id=%lu, max_num_shards=%lu\n", shard_id,
+             ctx_->max_num_shards);
       throw std::runtime_error("shard_id is out of range");
     }
     ptr += sizeof(sizeof(shard_id));
     memcpy(&rm_size, ptr, sizeof(rm_size));
-    qp_num_2_shard_id.insert(
-        std::make_pair(conn_id->qp->qp_num, next_conn_ids_idx));
+    qp_num_2_shard_id.insert(std::make_pair(conn_id->qp->qp_num, shard_id));
 
     // allocate remote memory
     if (!ctx_->bufs[shard_id]) {
@@ -615,11 +606,13 @@ int rdma::Transport::handle_connect_request(struct rdma_cm_event *cm_event) {
         VERB_ERR("rdma_reg_msgs buf_mr", -1);
         return -1;
       }
-      ctx_->num_connnected_client[shard_id]++;
       assert(rm_size == ctx_->buf_mrs[shard_id]->length);
     } else {
       assert(ctx_->bufs[shard_id] && ctx_->buf_mrs[shard_id]);
     }
+    ctx_->num_connnected_client[shard_id]++;
+    printf("#of connection to shard %lu is %lu\n", shard_id,
+           ctx_->num_connnected_client[shard_id]);
 
     // send back remote memory information
     ptr = ctx_->send_buf;
@@ -705,12 +698,15 @@ int rdma::Transport::handle_timewait_exit(struct rdma_cm_event *cm_event) {
     size_t shard_id = qp_num_2_shard_id[qp_num];
     ctx_->num_connnected_client[shard_id]--;
     // TODO: should free here
-    // assert(ctx_->bufs[shard_id]);
-    // if (ctx_->num_connnected_client[shard_id] == 0) {
-    //   free(ctx_->bufs[shard_id]);
-    //   ibv_dereg_mr(ctx_->buf_mrs[shard_id]);
-    //   ctx_->buf_mrs[shard_id] = nullptr;
-    // }
+    printf("#of connection to shard %lu is %lu\n", shard_id,
+           ctx_->num_connnected_client[shard_id]);
+    assert(ctx_->bufs[shard_id]);
+    if (ctx_->num_connnected_client[shard_id] == 0) {
+      free(ctx_->bufs[shard_id]);
+      ibv_dereg_mr(ctx_->buf_mrs[shard_id]);
+      ctx_->buf_mrs[shard_id] = nullptr;
+      ctx_->bufs[shard_id] = nullptr;
+    }
     ctx_->id_states[conn_idx] = RDMA_ID_STATE_FREE;
     printf("[%-16s] freed! (qp_num=%u)\n", "Connection", qp_num);
   }

@@ -200,7 +200,7 @@ if __name__ == '__main__':
         min_write_buffer_number_to_merge = max_write_buffer_number - 2
         write_buffer_size = 256*1024**2
         recordcount = 134217728
-        threads = 32
+        threads = 8
         table_cache_numshardbits = 4
         for rm_ratio in [0.0, 0.1, 0.5, 0.8]:
             conf_id = mngr.get_id(workload=workload, recordcount=recordcount, operationcount=operationcount, threads=threads, write_buffer_size=write_buffer_size, cache_size=cache_size, version=version, zipfian_alpha=zipfian_alpha, requestdistribution=requestdistribution,max_write_buffer_number=max_write_buffer_number,max_background_jobs=max_background_jobs, table_cache_numshardbits=table_cache_numshardbits,min_write_buffer_number_to_merge=min_write_buffer_number_to_merge, rm_ratio=rm_ratio)

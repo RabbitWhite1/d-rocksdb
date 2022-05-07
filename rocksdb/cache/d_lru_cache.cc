@@ -137,7 +137,7 @@ DLRUCacheShard::DLRUCacheShard(size_t capacity, bool strict_capacity_limit,
   rm_lru_.prev = &rm_lru_;
   SetCapacity(capacity);
   if (rm_ratio > 0.0) {
-    std::string server_ip = "10.0.0.5";
+    std::string server_ip = "10.0.0.6";
     // remote_memory_ = std::make_shared<RemoteMemory>(
     //     new FFBasedRemoteMemoryAllocator(), server_ip, capacity * rm_ratio);
     remote_memory_ = std::make_shared<RemoteMemory>(

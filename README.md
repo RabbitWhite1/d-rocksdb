@@ -40,7 +40,7 @@
     - [x] do the transfering out of mutex
     - [x] invoke `wait` upon using the DLRUHandle (e.g., Lookup), and do free if necessary.
 - [x] modify rm to support rdma_transport pool (avoid contention)
-- [ ] overlap rdma read/write as much as possible
+- [x] overlap rdma read/write as much as possible
   - [x] overlap read/write exchange in Lookup
 
 ### YCSB
