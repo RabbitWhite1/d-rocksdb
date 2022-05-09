@@ -23,10 +23,10 @@
 namespace rdma {
 
 constexpr char *DEFAULT_PORT = (char *)"51216";
-constexpr int DEFAULT_MAX_WR = 64;
-constexpr int DEFAULT_MAX_QP = 64;
+constexpr int DEFAULT_MAX_WR = 128;
+constexpr int DEFAULT_MAX_QP = 128;
 constexpr int DEFAULT_MAX_SHARDS = 64;
-constexpr int DEFAULT_MAX_CLIENT_QP = 1;
+constexpr int DEFAULT_MAX_CLIENT_QP = 2;
 constexpr int DEFAULT_MSG_LENGTH = 1024;
 constexpr int DEFAULT_BUF_LENGTH = 8192;
 

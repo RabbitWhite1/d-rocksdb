@@ -343,6 +343,7 @@ class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
     return Release(handle, force_erase);
   }
   virtual bool IsReady(Cache::Handle* /*handle*/) override;
+  void WaitAndUndo(DLRUHandle* handle);
   virtual void Wait(Cache::Handle* handle) override;
   virtual void Wait(DLRUHandle* handle) {
     Wait(reinterpret_cast<Cache::Handle*>(handle));
@@ -415,9 +416,10 @@ class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
                     autovector<DLRUHandle*>* evicted_from_lm_list);
   void EvictFromLMLRU(size_t charge,
                       autovector<DLRUHandle*>* evicted_from_lm_list);
-  void EvictFromRMLRUAndFreeHandle(size_t charge);
+  RMRegion* EvictFromRMLRUAndFreeHandle(size_t charge);
   void MoveValueToRM(DLRUHandle* handle,
-                     RMAsyncRequest* rm_async_request = nullptr);
+                     RMAsyncRequest* rm_async_request = nullptr,
+                     RMRegion* rm_region = nullptr);
   void FetchValueFromRM(DLRUHandle* e,
                         const ShardedCache::CreateCallback& create_cb,
                         RMAsyncRequest* rm_async_request = nullptr);
@@ -522,6 +524,8 @@ class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
   std::shared_ptr<RemoteMemory> remote_memory_;
 
   size_t shard_id_;
+
+  DLRUHandle* last_evicted_handle;
 };
 
 class DLRUCache

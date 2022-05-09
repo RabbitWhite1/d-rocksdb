@@ -213,7 +213,7 @@ int main(const int argc, const char *argv[]) {
   if (do_transaction) {
     const int total_ops =
         stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
-    const int total_warmup_ops = -1;
+    const int total_warmup_ops = 120000000;
     printf("Warmup starts! Total warmup ops: %d; %s\n", total_warmup_ops,
            measurements.GetStatusMsg().c_str());
     DoTransaction(total_warmup_ops, num_threads, measurements, status_db,

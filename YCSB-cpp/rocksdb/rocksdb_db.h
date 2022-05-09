@@ -171,6 +171,8 @@ public:
         // printf("%s\n",
         // statistics->getHistogramString(rocksdb::COMPACTION_TIME).c_str());
 
+        printf("%s\n",
+        statistics->getHistogramString(rocksdb::DB_GET).c_str());
         // printf("%s\n",
         // statistics->getHistogramString(rocksdb::DB_WRITE).c_str());
         // printf("%s\n",
