@@ -356,7 +356,7 @@ void DoTransaction(const int total_ops, const int num_threads,
   timer.Start();
   std::future<void> status_future;
   bool *has_warmup_done = nullptr;
-  if (is_warmup) {
+  if (is_warmup && total_ops == -1) {
     has_warmup_done = new bool(false);
   }
   if (show_status) {

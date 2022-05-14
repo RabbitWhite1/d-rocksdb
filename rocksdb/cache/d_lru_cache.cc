@@ -137,7 +137,7 @@ DLRUCacheShard::DLRUCacheShard(size_t capacity, bool strict_capacity_limit,
   rm_lru_.prev = &rm_lru_;
   SetCapacity(capacity);
   if (rm_ratio > 0.0) {
-    std::string server_ip = "10.0.0.5";
+    std::string server_ip = "10.0.0.7";
     // remote_memory_ = std::make_shared<RemoteMemory>(
     //     new FFBasedRemoteMemoryAllocator(), server_ip, capacity * rm_ratio);
     remote_memory_ = std::make_shared<RemoteMemory>(
@@ -936,8 +936,58 @@ Status DLRUCacheShard::Insert(const Slice& key, uint32_t hash, void* value,
 }
 
 void DLRUCacheShard::Erase(const Slice& /*key*/, uint32_t /*hash*/) {
-  assert(false && "Not Implemented");
+  throw std::runtime_error("just want to see when this is called");
 }
+
+// void DLRUCacheShard::Erase(const Slice& key, uint32_t hash) {
+//   throw std::runtime_error("just want to see when this is called");
+//   DLRUHandle* e;
+//   bool last_reference = false;
+//   {
+//     MutexLock l(&mutex_);
+//     e = table_.Remove(key, hash);
+//     if (e != nullptr) {
+//       assert(e->InCache());
+//       e->SetInCache(false);
+//       if (!e->HasRefs()) {
+//         // The entry is in LRU since it's in hash and has no external references
+//         if (e->IsLocal()) {
+//           LMLRU_Remove(e);
+//           size_t total_charge = e->CalcTotalCharge(metadata_charge_policy_);
+//           assert(usage_ >= total_charge);
+//           usage_ -= total_charge;
+//           last_reference = true;
+//         } else {
+//           if (last_evicted_handle) {
+//             Wait(last_evicted_handle);
+//             last_evicted_handle = nullptr;
+//           }
+//           RMLRU_Remove(e);
+//           size_t total_charge = e->CalcTotalCharge(metadata_charge_policy_);
+//           size_t slice_size = e->slice_size;
+//           assert(usage_ >= total_charge);
+//           assert(lm_usage_ >= total_charge - slice_size);
+//           assert(rm_usage_ >= slice_size);
+//           usage_ -= total_charge;
+//           lm_usage_ -= total_charge - slice_size;
+//           rm_usage_ -= slice_size;
+//           last_reference = true;
+//         }
+//       }
+//     }
+//   }
+
+//   // Free the entry here outside of mutex for performance reasons
+//   // last_reference will only be true if e != nullptr
+//   if (last_reference) {
+//     if (e->IsLocal()) {
+//       e->FreeValue();
+//     } else {
+//       remote_memory_->rmfree((RMRegion*)e->value);
+//     }
+//     e->Free();
+//   }
+// }
 
 bool DLRUCacheShard::IsReady(Cache::Handle* /*handle*/) {
   // TODO: check whether need this

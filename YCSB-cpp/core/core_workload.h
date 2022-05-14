@@ -250,7 +250,8 @@ inline bool CoreWorkload::DoTransaction(DB &db) {
       status = TransactionRead(db);
       break;
     case UPDATE:
-      status = TransactionUpdate(db);
+      // status = TransactionUpdate(db);
+      status = TransactionInsert(db);
       break;
     case INSERT:
       status = TransactionInsert(db);

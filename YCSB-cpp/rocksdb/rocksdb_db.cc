@@ -472,7 +472,8 @@ DB::Status RocksdbDB::ScanSingle(const std::string &table, const std::string &ke
 DB::Status RocksdbDB::UpdateSingle(const std::string &table, const std::string &key,
                                    std::vector<Field> &values) {
   std::string data;
-  rocksdb::Status s = db_->Get(rocksdb::ReadOptions(), key, &data);
+  rocksdb::Status s;
+  s = db_->Get(rocksdb::ReadOptions(), key, &data);
   if (s.IsNotFound()) {
     return kNotFound;
   } else if (!s.ok()) {
@@ -492,10 +493,10 @@ DB::Status RocksdbDB::UpdateSingle(const std::string &table, const std::string &
     }
     assert(found);
   }
-  rocksdb::WriteOptions wopt;
 
   data.clear();
   SerializeRow(current_values, data);
+  rocksdb::WriteOptions wopt;
   s = db_->Put(wopt, key, data);
   if (!s.ok()) {
     throw utils::Exception(std::string("RocksDB Put: ") + s.ToString());
