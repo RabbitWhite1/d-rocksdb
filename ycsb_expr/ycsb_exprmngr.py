@@ -91,20 +91,26 @@ requestdistribution={requestdistribution}
 requestdistribution_zipfian_alpha={zipfian_alpha}
 """
 
-LOAD_CMD = 'sleep 5 && date && time ./ycsb -load -db rocksdb -threads {threads} '\
+
+LOAD_CMD = 'sleep 5; du -sh {template_path}; du -sh {db_name}; '\
+'date && time ./ycsb -load -db rocksdb -threads {threads} '\
 '-P /home/wzh/d-rocksdb/ycsb_expr/workload/{conf_id} '\
 '-P /home/wzh/d-rocksdb/ycsb_expr/rocksdb_properties/{conf_id}.properties -s '\
 '> {log_path} '
-RUN_WITH_INIT_CMD = 'sleep 5 && date && time rm -rf /home/wzh/nvme/ycsb-rocksdb && time cp -r /home/wzh/nvme/ycsb-rocksdb.readonly.template /home/wzh/nvme/ycsb-rocksdb && time ./ycsb -run -db rocksdb -threads {threads} '\
+RUN_WITH_INIT_CMD = 'sleep 5; du -sh {template_path}; du -sh {db_name}; '\
+'time rm -rf {db_name} && time cp -r {template_path} {db_name} && '\
+'date && time ./ycsb -run -db rocksdb -threads {threads} '\
 '-P /home/wzh/d-rocksdb/ycsb_expr/workload/{conf_id} '\
 '-P /home/wzh/d-rocksdb/ycsb_expr/rocksdb_properties/{conf_id}.properties -s '\
 '|tee {log_path}'
-RUN_WITHOUT_INIT_CMD = 'sleep 5 && date && time ./ycsb -run -db rocksdb -threads {threads} '\
+RUN_WITHOUT_INIT_CMD = 'sleep 5; du -sh {template_path}; du -sh {db_name}; '\
+'date && time ./ycsb -run -db rocksdb -threads {threads} '\
 '-P /home/wzh/d-rocksdb/ycsb_expr/workload/{conf_id} '\
 '-P /home/wzh/d-rocksdb/ycsb_expr/rocksdb_properties/{conf_id}.properties -s '\
 '|tee {log_path}'
 
-DBNAMES = {'a': '/home/spdk/nvme/wzh/ycsb-rocksdb', 'b': '/home/spdk/nvme/wzh/ycsb-rocksdb', 'c': '/home/spdk/nvme/wzh/ycsb-rocksdb.readonly'}
+TEMPLATE_PATH = '/home/wzh/p5800/ycsb-rocksdb.readonly.template'
+DBNAMES = {'a': '/home/wzh/nvme/ycsb-rocksdb', 'b': '/home/wzh/nvme/ycsb-rocksdb', 'c': '/home/wzh/nvme/ycsb-rocksdb.readonly'}
 WORKLOADS = {'a': WORKLOADA, 'b': WORKLOADB, 'c': WORKLOADC}
 RUN_CMDS = {'a': RUN_WITH_INIT_CMD, 'b': RUN_WITH_INIT_CMD, 'c': RUN_WITHOUT_INIT_CMD}
 DB_DIRNAME = osp.dirname(__file__)
@@ -170,13 +176,33 @@ if __name__ == '__main__':
     #########################################
     # ycsb-b
     #########################################
+    for version in ['debug-v0']:
+        workload = 'b'
+        operationcount = 40000000
+        cache_size = int(32*1024**3)
+        recordcount = 134217728
+        for threads in [16,8,4,]:
+            for rm_ratio in [0.0,0.25,0.5,0.75]:
+                conf_id = mngr.get_id(workload=workload, recordcount=recordcount, operationcount=operationcount, threads=threads, write_buffer_size=write_buffer_size, cache_size=cache_size, version=version, zipfian_alpha=zipfian_alpha, requestdistribution=requestdistribution,max_write_buffer_number=max_write_buffer_number,max_background_jobs=max_background_jobs, table_cache_numshardbits=table_cache_numshardbits,min_write_buffer_number_to_merge=min_write_buffer_number_to_merge, rm_ratio=rm_ratio)
+                rocksdb_properties = ROCKSDB_PROPERTIES.format(workload=workload, write_buffer_size=write_buffer_size, cache_size=cache_size,max_write_buffer_number=max_write_buffer_number, dbname=DBNAMES[workload],max_background_jobs=max_background_jobs,table_cache_numshardbits=table_cache_numshardbits,min_write_buffer_number_to_merge=min_write_buffer_number_to_merge, rm_ratio=rm_ratio)
+                workload_conf = WORKLOADS[workload].format(recordcount=recordcount, operationcount=operationcount, zipfian_alpha=zipfian_alpha, requestdistribution=requestdistribution)
+                with open(osp.join(DB_DIRNAME, f'rocksdb_properties/{conf_id}.properties'), 'w') as rp:
+                    rp.write(rocksdb_properties)
+                with open(osp.join(DB_DIRNAME, f'workload/{conf_id}'), 'w') as wl:
+                    wl.write(workload_conf)
+                conf_id_list.append((conf_id, threads))
+                log_path = osp.join(mngr.remote_logs_dirname, f"{conf_id}.log")
+                command_list.append(RUN_CMDS[workload].format(threads=threads, conf_id=conf_id, template_path=TEMPLATE_PATH, db_name=DBNAMES[workload], log_path=log_path))
+    #########################################
+    # ycsb-c
+    #########################################
     # for version in ['debug-v0']:
-    #     workload = 'b'
+    #     workload = 'c'
     #     operationcount = 40000000
     #     cache_size = int(32*1024**3)
     #     recordcount = 134217728
-    #     for threads in [16,8,4,]:
-    #         for rm_ratio in [0.0,0.1,0.25,0.5,0.75]:
+    #     for threads in [4,8,16]:
+    #         for rm_ratio in [0.0,0.25,0.5,0.75]:
     #             conf_id = mngr.get_id(workload=workload, recordcount=recordcount, operationcount=operationcount, threads=threads, write_buffer_size=write_buffer_size, cache_size=cache_size, version=version, zipfian_alpha=zipfian_alpha, requestdistribution=requestdistribution,max_write_buffer_number=max_write_buffer_number,max_background_jobs=max_background_jobs, table_cache_numshardbits=table_cache_numshardbits,min_write_buffer_number_to_merge=min_write_buffer_number_to_merge, rm_ratio=rm_ratio)
     #             rocksdb_properties = ROCKSDB_PROPERTIES.format(workload=workload, write_buffer_size=write_buffer_size, cache_size=cache_size,max_write_buffer_number=max_write_buffer_number, dbname=DBNAMES[workload],max_background_jobs=max_background_jobs,table_cache_numshardbits=table_cache_numshardbits,min_write_buffer_number_to_merge=min_write_buffer_number_to_merge, rm_ratio=rm_ratio)
     #             workload_conf = WORKLOADS[workload].format(recordcount=recordcount, operationcount=operationcount, zipfian_alpha=zipfian_alpha, requestdistribution=requestdistribution)
@@ -187,26 +213,6 @@ if __name__ == '__main__':
     #             conf_id_list.append((conf_id, threads))
     #             log_path = osp.join(mngr.remote_logs_dirname, f"{conf_id}.log")
     #             command_list.append(RUN_CMDS[workload].format(threads=threads, conf_id=conf_id, log_path=log_path))
-    #########################################
-    # ycsb-c
-    #########################################
-    for version in ['debug-v0']:
-        workload = 'c'
-        operationcount = 40000000
-        cache_size = int(32*1024**3)
-        recordcount = 134217728
-        for threads in [4,8,16]:
-            for rm_ratio in [0.0,0.1,0.25,0.5,0.75]:
-                conf_id = mngr.get_id(workload=workload, recordcount=recordcount, operationcount=operationcount, threads=threads, write_buffer_size=write_buffer_size, cache_size=cache_size, version=version, zipfian_alpha=zipfian_alpha, requestdistribution=requestdistribution,max_write_buffer_number=max_write_buffer_number,max_background_jobs=max_background_jobs, table_cache_numshardbits=table_cache_numshardbits,min_write_buffer_number_to_merge=min_write_buffer_number_to_merge, rm_ratio=rm_ratio)
-                rocksdb_properties = ROCKSDB_PROPERTIES.format(workload=workload, write_buffer_size=write_buffer_size, cache_size=cache_size,max_write_buffer_number=max_write_buffer_number, dbname=DBNAMES[workload],max_background_jobs=max_background_jobs,table_cache_numshardbits=table_cache_numshardbits,min_write_buffer_number_to_merge=min_write_buffer_number_to_merge, rm_ratio=rm_ratio)
-                workload_conf = WORKLOADS[workload].format(recordcount=recordcount, operationcount=operationcount, zipfian_alpha=zipfian_alpha, requestdistribution=requestdistribution)
-                with open(osp.join(DB_DIRNAME, f'rocksdb_properties/{conf_id}.properties'), 'w') as rp:
-                    rp.write(rocksdb_properties)
-                with open(osp.join(DB_DIRNAME, f'workload/{conf_id}'), 'w') as wl:
-                    wl.write(workload_conf)
-                conf_id_list.append((conf_id, threads))
-                log_path = osp.join(mngr.remote_logs_dirname, f"{conf_id}.log")
-                command_list.append(RUN_CMDS[workload].format(threads=threads, conf_id=conf_id, log_path=log_path))
     for command in command_list:
         print(command)
 
