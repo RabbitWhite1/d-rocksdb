@@ -76,5 +76,8 @@ class BlockBasedMemoryAllocator : public MemoryAllocator {
   }
 
   std::string GetId() const override { return GenerateIndividualId(); }
+
+  char *get_addr() { return addr_; }
+  size_t get_size() { return size_; }
 };
 }  // namespace ROCKSDB_NAMESPACE

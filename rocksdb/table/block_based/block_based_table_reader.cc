@@ -1513,8 +1513,8 @@ Status BlockBasedTable::MaybeReadBlockAndLoadToCache(
   bool is_cache_hit = false;
   bool from_rm = false;
 
-  // std::chrono::high_resolution_clock::time_point begin =
-  //     std::chrono::high_resolution_clock::now();
+  std::chrono::high_resolution_clock::time_point begin =
+      std::chrono::high_resolution_clock::now();
 
   if (block_cache != nullptr || block_cache_compressed != nullptr) {
     // create key for block cache
@@ -1542,6 +1542,9 @@ Status BlockBasedTable::MaybeReadBlockAndLoadToCache(
       }
     }
 
+    std::chrono::high_resolution_clock::time_point end_find_cache =
+        std::chrono::high_resolution_clock::now();
+
     // Can't find the block from the cache. If I/O is allowed, read from the
     // file.
     if (block_entry->GetValue() == nullptr &&
@@ -1566,8 +1569,7 @@ Status BlockBasedTable::MaybeReadBlockAndLoadToCache(
             rep_->file.get(), prefetch_buffer, rep_->footer, ro, handle,
             &raw_block_contents, rep_->ioptions, do_uncompress,
             maybe_compressed, block_type, uncompression_dict,
-            rep_->persistent_cache_options,
-            memory_allocator,
+            rep_->persistent_cache_options, memory_allocator,
             GetMemoryAllocatorForCompressedBlock(rep_->table_options));
         s = block_fetcher.ReadBlockContents();
         raw_block_comp_type = block_fetcher.get_compression_type();
@@ -1595,25 +1597,28 @@ Status BlockBasedTable::MaybeReadBlockAndLoadToCache(
       if (s.ok()) {
         // If filling cache is allowed and a cache is configured, try to put the
         // block to the cache.
-        // std::chrono::high_resolution_clock::time_point begin_put =
-        //     std::chrono::high_resolution_clock::now();
-        s = PutDataBlockToCache(
-            key, block_cache, block_cache_compressed, block_entry, contents,
-            raw_block_comp_type, uncompression_dict,
-            memory_allocator, block_type, get_context);
-        // std::chrono::high_resolution_clock::time_point end =
-        //     std::chrono::high_resolution_clock::now();
-        // printf(
-        //     "cache miss Get took %ld ns, put took %ld ns, read took %ld
-        //     ns\n", std::chrono::duration_cast<std::chrono::nanoseconds>(end -
-        //     begin)
-        //         .count(),
-        //     std::chrono::duration_cast<std::chrono::nanoseconds>(end -
-        //                                                          begin_put)
-        //         .count(),
-        //     std::chrono::duration_cast<std::chrono::nanoseconds>(begin_put -
-        //                                                          begin)
-        //         .count());
+        std::chrono::high_resolution_clock::time_point begin_put =
+            std::chrono::high_resolution_clock::now();
+        s = PutDataBlockToCache(key, block_cache, block_cache_compressed,
+                                block_entry, contents, raw_block_comp_type,
+                                uncompression_dict, memory_allocator,
+                                block_type, get_context);
+        std::chrono::high_resolution_clock::time_point end =
+            std::chrono::high_resolution_clock::now();
+        printf(
+            "cache miss Get took %ld ns, test took %ld ns, put took %ld ns, "
+            "read took %ld ns\n",
+            std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+                .count(),
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                end_find_cache - begin)
+                .count(),
+            std::chrono::duration_cast<std::chrono::nanoseconds>(end -
+                                                                 begin_put)
+                .count(),
+            std::chrono::duration_cast<std::chrono::nanoseconds>(begin_put -
+                                                                 end_find_cache)
+                .count());
       }
     }
   }
@@ -1684,21 +1689,19 @@ Status BlockBasedTable::MaybeReadBlockAndLoadToCache(
 
   assert(s.ok() || block_entry->GetValue() == nullptr);
 
-  // std::chrono::high_resolution_clock::time_point end =
-  //     std::chrono::high_resolution_clock::now();
-  // if (is_cache_hit) {
-  //   if (from_rm) {
-  //     printf("\033[1;32mcache hit rm took %ld ns\033[0m\n",
-  //            std::chrono::duration_cast<std::chrono::nanoseconds>(end -
-  //            begin)
-  //                .count());
-  //   } else {
-  //     printf("cache hit lm took %ld ns\n",
-  //            std::chrono::duration_cast<std::chrono::nanoseconds>(end -
-  //            begin)
-  //                .count());
-  //   }
-  // }
+  std::chrono::high_resolution_clock::time_point end =
+      std::chrono::high_resolution_clock::now();
+  if (is_cache_hit) {
+    if (from_rm) {
+      printf("\033[1;32mcache hit rm took %ld ns\033[0m\n",
+             std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+                 .count());
+    } else {
+      printf("cache hit lm took %ld ns\n",
+             std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+                 .count());
+    }
+  }
   return s;
 }
 

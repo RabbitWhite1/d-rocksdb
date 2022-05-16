@@ -18,6 +18,7 @@ BlockBasedMemoryAllocator::BlockBasedMemoryAllocator(size_t size,
   head_->next_free = nullptr;
   head_->prev_free = nullptr;
   free_head_ = head_;
+  printf("lm range: [%p, %p)\n", addr_, addr_ + size_);
 }
 
 BlockBasedMemoryAllocator::~BlockBasedMemoryAllocator() {

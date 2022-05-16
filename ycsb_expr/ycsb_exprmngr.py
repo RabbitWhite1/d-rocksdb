@@ -199,35 +199,13 @@ if __name__ == '__main__':
     #########################################
     # ycsb-c
     #########################################
-    # for version in ['debug-v0']:
-    #     workload = 'c'
-    #     operationcount = 40000000
-    #     cache_size = int(32*1024**3)
-    #     recordcount = 134217728
-    #     for threads in [4,8,16]:
-    #         for rm_ratio in [0.0,0.25,0.5,0.75]:
-    #             conf_id = mngr.get_id(workload=workload, recordcount=recordcount, operationcount=operationcount, threads=threads, write_buffer_size=write_buffer_size, cache_size=cache_size, version=version, zipfian_alpha=zipfian_alpha, requestdistribution=requestdistribution,max_write_buffer_number=max_write_buffer_number,max_background_jobs=max_background_jobs, table_cache_numshardbits=table_cache_numshardbits,min_write_buffer_number_to_merge=min_write_buffer_number_to_merge, rm_ratio=rm_ratio)
-    #             rocksdb_properties = ROCKSDB_PROPERTIES.format(workload=workload, write_buffer_size=write_buffer_size, cache_size=cache_size,max_write_buffer_number=max_write_buffer_number, dbname=DBNAMES[workload],max_background_jobs=max_background_jobs,table_cache_numshardbits=table_cache_numshardbits,min_write_buffer_number_to_merge=min_write_buffer_number_to_merge, rm_ratio=rm_ratio)
-    #             workload_conf = WORKLOADS[workload].format(recordcount=recordcount, operationcount=operationcount, zipfian_alpha=zipfian_alpha, requestdistribution=requestdistribution)
-    #             with open(osp.join(DB_DIRNAME, f'rocksdb_properties/{conf_id}.properties'), 'w') as rp:
-    #                 rp.write(rocksdb_properties)
-    #             with open(osp.join(DB_DIRNAME, f'workload/{conf_id}'), 'w') as wl:
-    #                 wl.write(workload_conf)
-    #             conf_id_list.append((conf_id, threads))
-    #             log_path = osp.join(mngr.remote_logs_dirname, f"{conf_id}.log")
-    #             command_list.append(RUN_CMDS[workload].format(threads=threads, conf_id=conf_id, template_path=TEMPLATE_PATH, db_name=DBNAMES[workload], log_path=log_path))
-    #########################################
-    # rm v.s. ssd
-    #########################################
     for version in ['debug-v0']:
         workload = 'c'
         operationcount = 40000000
-        original_cache_size = int(32*1024**3)
+        cache_size = int(32*1024**3)
         recordcount = 134217728
-        for threads in [1, 4,8,16]:
-            for rm_ratio in [0,0.25,0.5,0.75]:
-                cache_size = int(original_cache_size * (1 - rm_ratio))
-                rm_ratio = 0.0
+        for threads in [4,8,16]:
+            for rm_ratio in [0.0,0.25,0.5,0.75]:
                 conf_id = mngr.get_id(workload=workload, recordcount=recordcount, operationcount=operationcount, threads=threads, write_buffer_size=write_buffer_size, cache_size=cache_size, version=version, zipfian_alpha=zipfian_alpha, requestdistribution=requestdistribution,max_write_buffer_number=max_write_buffer_number,max_background_jobs=max_background_jobs, table_cache_numshardbits=table_cache_numshardbits,min_write_buffer_number_to_merge=min_write_buffer_number_to_merge, rm_ratio=rm_ratio)
                 rocksdb_properties = ROCKSDB_PROPERTIES.format(workload=workload, write_buffer_size=write_buffer_size, cache_size=cache_size,max_write_buffer_number=max_write_buffer_number, dbname=DBNAMES[workload],max_background_jobs=max_background_jobs,table_cache_numshardbits=table_cache_numshardbits,min_write_buffer_number_to_merge=min_write_buffer_number_to_merge, rm_ratio=rm_ratio)
                 workload_conf = WORKLOADS[workload].format(recordcount=recordcount, operationcount=operationcount, zipfian_alpha=zipfian_alpha, requestdistribution=requestdistribution)
@@ -238,6 +216,28 @@ if __name__ == '__main__':
                 conf_id_list.append((conf_id, threads))
                 log_path = osp.join(mngr.remote_logs_dirname, f"{conf_id}.log")
                 command_list.append(RUN_CMDS[workload].format(threads=threads, conf_id=conf_id, template_path=TEMPLATE_PATH, db_name=DBNAMES[workload], log_path=log_path))
+    #########################################
+    # rm v.s. ssd
+    #########################################
+    # for version in ['debug-v0']:
+    #     workload = 'c'
+    #     operationcount = 40000000
+    #     original_cache_size = int(32*1024**3)
+    #     recordcount = 134217728
+    #     for threads in [4,8,16]:
+    #         for rm_ratio in [0,0.25,0.5,0.75]:
+    #             cache_size = int(original_cache_size * (1 - rm_ratio))
+    #             rm_ratio = 0.0
+    #             conf_id = mngr.get_id(workload=workload, recordcount=recordcount, operationcount=operationcount, threads=threads, write_buffer_size=write_buffer_size, cache_size=cache_size, version=version, zipfian_alpha=zipfian_alpha, requestdistribution=requestdistribution,max_write_buffer_number=max_write_buffer_number,max_background_jobs=max_background_jobs, table_cache_numshardbits=table_cache_numshardbits,min_write_buffer_number_to_merge=min_write_buffer_number_to_merge, rm_ratio=rm_ratio)
+    #             rocksdb_properties = ROCKSDB_PROPERTIES.format(workload=workload, write_buffer_size=write_buffer_size, cache_size=cache_size,max_write_buffer_number=max_write_buffer_number, dbname=DBNAMES[workload],max_background_jobs=max_background_jobs,table_cache_numshardbits=table_cache_numshardbits,min_write_buffer_number_to_merge=min_write_buffer_number_to_merge, rm_ratio=rm_ratio)
+    #             workload_conf = WORKLOADS[workload].format(recordcount=recordcount, operationcount=operationcount, zipfian_alpha=zipfian_alpha, requestdistribution=requestdistribution)
+    #             with open(osp.join(DB_DIRNAME, f'rocksdb_properties/{conf_id}.properties'), 'w') as rp:
+    #                 rp.write(rocksdb_properties)
+    #             with open(osp.join(DB_DIRNAME, f'workload/{conf_id}'), 'w') as wl:
+    #                 wl.write(workload_conf)
+    #             conf_id_list.append((conf_id, threads))
+    #             log_path = osp.join(mngr.remote_logs_dirname, f"{conf_id}.log")
+    #             command_list.append(RUN_CMDS[workload].format(threads=threads, conf_id=conf_id, template_path=TEMPLATE_PATH, db_name=DBNAMES[workload], log_path=log_path))
     for command in command_list:
         print(command)
 

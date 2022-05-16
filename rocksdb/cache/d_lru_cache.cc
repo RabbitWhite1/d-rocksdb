@@ -116,7 +116,8 @@ DLRUCacheShard::DLRUCacheShard(size_t capacity, bool strict_capacity_limit,
                                CacheMetadataChargePolicy metadata_charge_policy,
                                int max_upper_hash_bits,
                                const std::shared_ptr<RemoteMemory>&,
-                               const size_t shard_id)
+                               const size_t shard_id,
+                               const std::shared_ptr<LocalMemory>& local_memory)
     : capacity_(0),
       high_pri_pool_usage_(0),
       strict_capacity_limit_(strict_capacity_limit),
@@ -127,7 +128,8 @@ DLRUCacheShard::DLRUCacheShard(size_t capacity, bool strict_capacity_limit,
       usage_(0),
       lm_lru_usage_(0),
       mutex_(use_adaptive_mutex),
-      shard_id_(shard_id) {
+      shard_id_(shard_id),
+      local_memory_(local_memory) {
   set_metadata_charge_policy(metadata_charge_policy);
   // Make empty circular linked list
   lm_lru_.next = &lm_lru_;
@@ -143,6 +145,7 @@ DLRUCacheShard::DLRUCacheShard(size_t capacity, bool strict_capacity_limit,
     remote_memory_ = std::make_shared<RemoteMemory>(
         new BlockBasedRemoteMemoryAllocator(4096ul), server_ip,
         capacity * rm_ratio, shard_id_);
+    remote_memory_->init_lm(local_memory_);
   } else {
     remote_memory_ = nullptr;
   }
@@ -1106,15 +1109,15 @@ std::string DLRUCacheShard::GetPrintableOptions() const {
   return std::string(buffer);
 }
 
-DLRUCache::DLRUCache(
-    size_t capacity, int num_shard_bits, bool strict_capacity_limit,
-    double high_pri_pool_ratio, double rm_ratio,
-    std::shared_ptr<MemoryAllocator> allocator,
-    std::shared_ptr<MemoryAllocator> data_block_memory_allocator,
-    bool use_adaptive_mutex, CacheMetadataChargePolicy metadata_charge_policy)
+DLRUCache::DLRUCache(size_t capacity, int num_shard_bits,
+                     bool strict_capacity_limit, double high_pri_pool_ratio,
+                     double rm_ratio,
+                     std::shared_ptr<MemoryAllocator> allocator,
+                     std::shared_ptr<MemoryAllocator> data_block_allocator,
+                     bool use_adaptive_mutex,
+                     CacheMetadataChargePolicy metadata_charge_policy)
     : ShardedCache(capacity, num_shard_bits, strict_capacity_limit,
-                   std::move(allocator),
-                   std::move(data_block_memory_allocator)) {
+                   std::move(allocator), std::move(data_block_allocator)) {
   num_shards_ = 1 << num_shard_bits;
   shards_ = reinterpret_cast<DLRUCacheShard*>(
       port::cacheline_aligned_alloc(sizeof(DLRUCacheShard) * num_shards_));
@@ -1122,12 +1125,17 @@ DLRUCache::DLRUCache(
   printf(
       "DLRUCache num_shards=%d, per_shard=%lu, rm_ratio=%lf, "
       "data_block_memory_allocator: %p\n",
-      num_shards_, per_shard, rm_ratio, data_block_memory_allocator.get());
+      num_shards_, per_shard, rm_ratio, data_block_memory_allocator());
+  if (data_block_memory_allocator()) {
+    local_memory_ =
+        std::make_shared<LocalMemory>(data_block_memory_allocator());
+  }
   for (int i = 0; i < num_shards_; i++) {
-    new (&shards_[i]) DLRUCacheShard(
-        per_shard, strict_capacity_limit, high_pri_pool_ratio, rm_ratio,
-        use_adaptive_mutex, metadata_charge_policy,
-        /* max_upper_hash_bits */ 32 - num_shard_bits, nullptr, /*shard_id=*/i);
+    new (&shards_[i])
+        DLRUCacheShard(per_shard, strict_capacity_limit, high_pri_pool_ratio,
+                       rm_ratio, use_adaptive_mutex, metadata_charge_policy,
+                       /* max_upper_hash_bits */ 32 - num_shard_bits, nullptr,
+                       /*shard_id=*/i, local_memory_);
   }
 }
 

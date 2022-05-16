@@ -633,6 +633,7 @@ set(SOURCES
         cache/sharded_cache.cc
         cache/remote_memory/block_based_rm_allocator.cc
         cache/remote_memory/ff_based_rm_allocator.cc
+        cache/remote_memory/lm.cc
         cache/remote_memory/rdma_transport.cc
         cache/remote_memory/rdma_utils.cc
         cache/remote_memory/rm.cc

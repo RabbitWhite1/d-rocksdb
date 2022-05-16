@@ -13,6 +13,7 @@
 
 #include "cache/remote_memory/block_based_rm_allocator.h"
 #include "cache/remote_memory/ff_based_rm_allocator.h"
+#include "cache/remote_memory/lm.h"
 #include "cache/remote_memory/rm.h"
 #include "cache/sharded_cache.h"
 #include "port/lang.h"
@@ -299,7 +300,8 @@ class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
                  CacheMetadataChargePolicy metadata_charge_policy,
                  int max_upper_hash_bits,
                  const std::shared_ptr<RemoteMemory>& remote_memory,
-                 const size_t shard_id);
+                 const size_t shard_id,
+                 const std::shared_ptr<LocalMemory>& local_memory);
   virtual ~DLRUCacheShard() override = default;
 
   // Separate from constructor so caller can easily make an array of DLRUCache
@@ -525,6 +527,8 @@ class ALIGN_AS(CACHE_LINE_SIZE) DLRUCacheShard final : public CacheShard {
 
   size_t shard_id_;
 
+  std::shared_ptr<LocalMemory> local_memory_;
+
   DLRUHandle* last_evicted_handle;
 };
 
@@ -534,13 +538,14 @@ class DLRUCache
 #endif
     : public ShardedCache {
  public:
-  DLRUCache(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
-            double high_pri_pool_ratio, double rm_ratio,
-            std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
-            std::shared_ptr<MemoryAllocator> data_block_memory_allocator = nullptr,
-            bool use_adaptive_mutex = kDefaultToAdaptiveMutex,
-            CacheMetadataChargePolicy metadata_charge_policy =
-                kDontChargeCacheMetadata);
+  DLRUCache(
+      size_t capacity, int num_shard_bits, bool strict_capacity_limit,
+      double high_pri_pool_ratio, double rm_ratio,
+      std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
+      std::shared_ptr<MemoryAllocator> data_block_memory_allocator = nullptr,
+      bool use_adaptive_mutex = kDefaultToAdaptiveMutex,
+      CacheMetadataChargePolicy metadata_charge_policy =
+          kDontChargeCacheMetadata);
   virtual ~DLRUCache();
   virtual const char* Name() const override { return "DLRUCache"; }
   virtual CacheShard* GetShard(uint32_t shard) override;
@@ -561,6 +566,7 @@ class DLRUCache
   DLRUCacheShard* shards_ = nullptr;
   int num_shards_ = 0;
   std::shared_ptr<RemoteMemory> remote_memory_;
+  std::shared_ptr<LocalMemory> local_memory_;
 };
 
 }  // namespace ROCKSDB_NAMESPACE

@@ -46,7 +46,8 @@
 #### Improved Version v3.0.0
 
 - [x] local BlockBasedMemoryAllocator
-- [ ] register local BlockBasedMemoryAllocator for RDMA
+- [x] register local BlockBasedMemoryAllocator for RDMA
+  - [ ] [debug] has performance degration (should not)
 - [ ] directly read/write to avoid copy
 
 ### YCSB
