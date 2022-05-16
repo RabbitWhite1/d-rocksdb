@@ -43,6 +43,12 @@
 - [x] overlap rdma read/write as much as possible
   - [x] overlap read/write exchange in Lookup
 
+#### Improved Version v3.0.0
+
+- [x] local BlockBasedMemoryAllocator
+- [ ] register local BlockBasedMemoryAllocator for RDMA
+- [ ] directly read/write to avoid copy
+
 ### YCSB
 
 - [ ] support configuration of using `d_lru_cache` or normal `lru_cache`

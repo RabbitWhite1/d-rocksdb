@@ -224,8 +224,8 @@ if __name__ == '__main__':
         operationcount = 40000000
         original_cache_size = int(32*1024**3)
         recordcount = 134217728
-        for threads in [4,8,16]:
-            for rm_ratio in [0.25,0.5,0.75]:
+        for threads in [1, 4,8,16]:
+            for rm_ratio in [0,0.25,0.5,0.75]:
                 cache_size = int(original_cache_size * (1 - rm_ratio))
                 rm_ratio = 0.0
                 conf_id = mngr.get_id(workload=workload, recordcount=recordcount, operationcount=operationcount, threads=threads, write_buffer_size=write_buffer_size, cache_size=cache_size, version=version, zipfian_alpha=zipfian_alpha, requestdistribution=requestdistribution,max_write_buffer_number=max_write_buffer_number,max_background_jobs=max_background_jobs, table_cache_numshardbits=table_cache_numshardbits,min_write_buffer_number_to_merge=min_write_buffer_number_to_merge, rm_ratio=rm_ratio)

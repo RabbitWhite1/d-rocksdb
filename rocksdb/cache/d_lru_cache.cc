@@ -537,7 +537,8 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
       EvictFromLMLRU(total_charge, &evict_to_rm_list);
       // end = std::chrono::high_resolution_clock::now();
       // printf("evict from lm_lru %ld\n",
-      //        std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+      //        std::chrono::duration_cast<std::chrono::nanoseconds>(end -
+      //        begin)
       //            .count());
 
       for (auto lm_entry : evict_to_rm_list) {
@@ -553,14 +554,16 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
           // end = std::chrono::high_resolution_clock::now();
           // printf(
           //     "wait last evicted(1) %ld\n",
-          //     std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+          //     std::chrono::duration_cast<std::chrono::nanoseconds>(end -
+          //     begin)
           //         .count());
         }
         // begin = std::chrono::high_resolution_clock::now();
         RMRegion* rm_region = EvictFromRMLRUAndFreeHandle(lm_entry_slice_size);
         // end = std::chrono::high_resolution_clock::now();
         // printf("EvictFromRMLRUAndFreeHandle %ld\n",
-        //        std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+        //        std::chrono::duration_cast<std::chrono::nanoseconds>(end -
+        //        begin)
         //            .count());
         // TODO: if rm is full, and cannot evict enough space for putting entry
         //     from lm, then we directly evict lm_entry
@@ -580,7 +583,8 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
         last_evicted_handle = lm_entry;
         // end = std::chrono::high_resolution_clock::now();
         // printf("request move to rm %ld\n",
-        //        std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+        //        std::chrono::duration_cast<std::chrono::nanoseconds>(end -
+        //        begin)
         //            .count());
       }
     } else {
@@ -615,7 +619,8 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
           // end = std::chrono::high_resolution_clock::now();
           // printf(
           //     "wait last evicted(2) %ld\n",
-          //     std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+          //     std::chrono::duration_cast<std::chrono::nanoseconds>(end -
+          //     begin)
           //         .count());
         }
         // begin = std::chrono::high_resolution_clock::now();
@@ -658,7 +663,8 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
         }
         // end = std::chrono::high_resolution_clock::now();
         // printf("remove old %ld\n",
-        //        std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
+        //        std::chrono::duration_cast<std::chrono::nanoseconds>(end -
+        //        begin)
         //            .count());
       }
       if (handle == nullptr) {
@@ -950,8 +956,8 @@ void DLRUCacheShard::Erase(const Slice& /*key*/, uint32_t /*hash*/) {
 //       assert(e->InCache());
 //       e->SetInCache(false);
 //       if (!e->HasRefs()) {
-//         // The entry is in LRU since it's in hash and has no external references
-//         if (e->IsLocal()) {
+//         // The entry is in LRU since it's in hash and has no external
+//         references if (e->IsLocal()) {
 //           LMLRU_Remove(e);
 //           size_t total_charge = e->CalcTotalCharge(metadata_charge_policy_);
 //           assert(usage_ >= total_charge);
@@ -1100,20 +1106,23 @@ std::string DLRUCacheShard::GetPrintableOptions() const {
   return std::string(buffer);
 }
 
-DLRUCache::DLRUCache(size_t capacity, int num_shard_bits,
-                     bool strict_capacity_limit, double high_pri_pool_ratio,
-                     double rm_ratio,
-                     std::shared_ptr<MemoryAllocator> allocator,
-                     bool use_adaptive_mutex,
-                     CacheMetadataChargePolicy metadata_charge_policy)
+DLRUCache::DLRUCache(
+    size_t capacity, int num_shard_bits, bool strict_capacity_limit,
+    double high_pri_pool_ratio, double rm_ratio,
+    std::shared_ptr<MemoryAllocator> allocator,
+    std::shared_ptr<MemoryAllocator> data_block_memory_allocator,
+    bool use_adaptive_mutex, CacheMetadataChargePolicy metadata_charge_policy)
     : ShardedCache(capacity, num_shard_bits, strict_capacity_limit,
-                   std::move(allocator)) {
+                   std::move(allocator),
+                   std::move(data_block_memory_allocator)) {
   num_shards_ = 1 << num_shard_bits;
   shards_ = reinterpret_cast<DLRUCacheShard*>(
       port::cacheline_aligned_alloc(sizeof(DLRUCacheShard) * num_shards_));
   size_t per_shard = (capacity + (num_shards_ - 1)) / num_shards_;
-  printf("DLRUCache num_shards=%d, per_shard=%lu, rm_ratio=%lf\n", num_shards_,
-         per_shard, rm_ratio);
+  printf(
+      "DLRUCache num_shards=%d, per_shard=%lu, rm_ratio=%lf, "
+      "data_block_memory_allocator: %p\n",
+      num_shards_, per_shard, rm_ratio, data_block_memory_allocator.get());
   for (int i = 0; i < num_shards_; i++) {
     new (&shards_[i]) DLRUCacheShard(
         per_shard, strict_capacity_limit, high_pri_pool_ratio, rm_ratio,
@@ -1192,8 +1201,9 @@ void DLRUCache::WaitAll(std::vector<Handle*>& /*handles*/) {
 std::shared_ptr<Cache> NewDLRUCache(
     size_t capacity, int num_shard_bits, bool strict_capacity_limit,
     double high_pri_pool_ratio, double rm_ratio,
-    std::shared_ptr<MemoryAllocator> memory_allocator, bool use_adaptive_mutex,
-    CacheMetadataChargePolicy metadata_charge_policy) {
+    std::shared_ptr<MemoryAllocator> memory_allocator,
+    std::shared_ptr<MemoryAllocator> data_block_memory_allocator,
+    bool use_adaptive_mutex, CacheMetadataChargePolicy metadata_charge_policy) {
   if (num_shard_bits >= 20) {
     return nullptr;  // the cache cannot be sharded into too many fine pieces
   }
@@ -1210,8 +1220,8 @@ std::shared_ptr<Cache> NewDLRUCache(
   }
   return std::make_shared<DLRUCache>(
       capacity, num_shard_bits, strict_capacity_limit, high_pri_pool_ratio,
-      rm_ratio, std::move(memory_allocator), use_adaptive_mutex,
-      metadata_charge_policy);
+      rm_ratio, memory_allocator, data_block_memory_allocator,
+      use_adaptive_mutex, metadata_charge_policy);
 }
 
 std::shared_ptr<Cache> NewDLRUCache(const DLRUCacheOptions& cache_opts) {
@@ -1219,6 +1229,7 @@ std::shared_ptr<Cache> NewDLRUCache(const DLRUCacheOptions& cache_opts) {
       cache_opts.capacity, cache_opts.num_shard_bits,
       cache_opts.strict_capacity_limit, cache_opts.high_pri_pool_ratio,
       cache_opts.rm_ratio, cache_opts.memory_allocator,
-      cache_opts.use_adaptive_mutex, cache_opts.metadata_charge_policy);
+      cache_opts.data_block_memory_allocator, cache_opts.use_adaptive_mutex,
+      cache_opts.metadata_charge_policy);
 }
 }  // namespace ROCKSDB_NAMESPACE

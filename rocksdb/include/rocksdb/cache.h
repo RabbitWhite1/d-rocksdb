@@ -80,6 +80,7 @@ struct LRUCacheOptions {
   // ignored when dealing with compression libraries that allocate memory
   // internally (currently only XPRESS).
   std::shared_ptr<MemoryAllocator> memory_allocator;
+  std::shared_ptr<MemoryAllocator> data_block_memory_allocator;
 
   // Whether to use adaptive mutexes for cache shards. Note that adaptive
   // mutexes need to be supported by the platform in order for this to have any
@@ -177,6 +178,7 @@ struct DLRUCacheOptions {
   // ignored when dealing with compression libraries that allocate memory
   // internally (currently only XPRESS).
   std::shared_ptr<MemoryAllocator> memory_allocator;
+  std::shared_ptr<MemoryAllocator> data_block_memory_allocator;
 
   // Whether to use adaptive mutexes for cache shards. Note that adaptive
   // mutexes need to be supported by the platform in order for this to have any
@@ -191,17 +193,21 @@ struct DLRUCacheOptions {
   std::shared_ptr<SecondaryCache> secondary_cache;
 
   DLRUCacheOptions() {}
-  DLRUCacheOptions(size_t _capacity, int _num_shard_bits,
-                   bool _strict_capacity_limit, double _high_pri_pool_ratio,
-                   std::shared_ptr<MemoryAllocator> _memory_allocator = nullptr,
-                   bool _use_adaptive_mutex = kDefaultToAdaptiveMutex,
-                   CacheMetadataChargePolicy _metadata_charge_policy =
-                       kDefaultCacheMetadataChargePolicy)
+  DLRUCacheOptions(
+      size_t _capacity, int _num_shard_bits, bool _strict_capacity_limit,
+      double _high_pri_pool_ratio, double _rm_ratio,
+      std::shared_ptr<MemoryAllocator> _memory_allocator = nullptr,
+      std::shared_ptr<MemoryAllocator> _data_block_memory_allocator = nullptr,
+      bool _use_adaptive_mutex = kDefaultToAdaptiveMutex,
+      CacheMetadataChargePolicy _metadata_charge_policy =
+          kDefaultCacheMetadataChargePolicy)
       : capacity(_capacity),
         num_shard_bits(_num_shard_bits),
         strict_capacity_limit(_strict_capacity_limit),
         high_pri_pool_ratio(_high_pri_pool_ratio),
+        rm_ratio(_rm_ratio),
         memory_allocator(std::move(_memory_allocator)),
+        data_block_memory_allocator(std::move(_data_block_memory_allocator)),
         use_adaptive_mutex(_use_adaptive_mutex),
         metadata_charge_policy(_metadata_charge_policy) {}
 };
@@ -219,6 +225,7 @@ extern std::shared_ptr<Cache> NewDLRUCache(
     bool strict_capacity_limit = false, double high_pri_pool_ratio = 0.5,
     double rm_ratio = 0.0,
     std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
+    std::shared_ptr<MemoryAllocator> data_block_memory_allocator = nullptr,
     bool use_adaptive_mutex = kDefaultToAdaptiveMutex,
     CacheMetadataChargePolicy metadata_charge_policy =
         kDefaultCacheMetadataChargePolicy);
@@ -293,8 +300,10 @@ class Cache {
   using CreateCallback = std::function<Status(const void* buf, size_t size,
                                               void** out_obj, size_t* charge)>;
 
-  Cache(std::shared_ptr<MemoryAllocator> allocator = nullptr)
-      : memory_allocator_(std::move(allocator)) {}
+  Cache(std::shared_ptr<MemoryAllocator> allocator = nullptr,
+        std::shared_ptr<MemoryAllocator> data_block_allocator = nullptr)
+      : memory_allocator_(std::move(allocator)),
+        data_block_memory_allocator_(std::move(data_block_allocator)) {}
   // No copying allowed
   Cache(const Cache&) = delete;
   Cache& operator=(const Cache&) = delete;
@@ -471,6 +480,9 @@ class Cache {
   virtual std::string GetPrintableOptions() const { return ""; }
 
   MemoryAllocator* memory_allocator() const { return memory_allocator_.get(); }
+  MemoryAllocator* data_block_memory_allocator() const {
+    return data_block_memory_allocator_.get();
+  }
 
   // EXPERIMENTAL
   // The following APIs are experimental and might change in the future.
@@ -579,6 +591,7 @@ class Cache {
 
  private:
   std::shared_ptr<MemoryAllocator> memory_allocator_;
+  std::shared_ptr<MemoryAllocator> data_block_memory_allocator_;
 };
 
 }  // namespace ROCKSDB_NAMESPACE

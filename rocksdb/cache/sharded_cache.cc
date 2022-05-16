@@ -27,10 +27,11 @@ inline uint32_t HashSlice(const Slice& s) {
 
 }  // namespace
 
-ShardedCache::ShardedCache(size_t capacity, int num_shard_bits,
-                           bool strict_capacity_limit,
-                           std::shared_ptr<MemoryAllocator> allocator)
-    : Cache(std::move(allocator)),
+ShardedCache::ShardedCache(
+    size_t capacity, int num_shard_bits, bool strict_capacity_limit,
+    std::shared_ptr<MemoryAllocator> allocator,
+    std::shared_ptr<MemoryAllocator> data_block_memory_allocator)
+    : Cache(std::move(allocator), std::move(data_block_memory_allocator)),
       shard_mask_((uint32_t{1} << num_shard_bits) - 1),
       capacity_(capacity),
       strict_capacity_limit_(strict_capacity_limit),

@@ -136,12 +136,11 @@ inline void BlockFetcher::PrepareBufferForBlockFromFile() {
     // file reader that does not implement mmap reads properly.
     used_buf_ = &stack_buf_[0];
   } else if (maybe_compressed_ && !do_uncompress_) {
-    compressed_buf_ = AllocateBlock(block_size_with_trailer_,
-                                    memory_allocator_compressed_);
+    compressed_buf_ =
+        AllocateBlock(block_size_with_trailer_, memory_allocator_compressed_);
     used_buf_ = compressed_buf_.get();
   } else {
-    heap_buf_ =
-        AllocateBlock(block_size_with_trailer_, memory_allocator_);
+    heap_buf_ = AllocateBlock(block_size_with_trailer_, memory_allocator_);
     used_buf_ = heap_buf_.get();
   }
 }
@@ -177,8 +176,8 @@ inline void BlockFetcher::CopyBufferToHeapBuf() {
 
 inline void BlockFetcher::CopyBufferToCompressedBuf() {
   assert(used_buf_ != compressed_buf_.get());
-  compressed_buf_ = AllocateBlock(block_size_with_trailer_,
-                                  memory_allocator_compressed_);
+  compressed_buf_ =
+      AllocateBlock(block_size_with_trailer_, memory_allocator_compressed_);
   memcpy(compressed_buf_.get(), used_buf_, block_size_with_trailer_);
 #ifndef NDEBUG
   num_compressed_buf_memcpy_++;
@@ -250,6 +249,8 @@ IOStatus BlockFetcher::ReadBlockContents() {
             &direct_io_buf_, read_options_.rate_limiter_priority);
         PERF_COUNTER_ADD(block_read_count, 1);
         used_buf_ = const_cast<char*>(slice_.data());
+        throw std::runtime_error(
+            "suppose that direct io is not used for d-rocksdb");
       } else {
         PrepareBufferForBlockFromFile();
         PERF_TIMER_GUARD(block_read_time);

@@ -17,9 +17,30 @@ extern void ForceReleaseCachedEntry(void* arg, void* h);
 
 inline MemoryAllocator* GetMemoryAllocator(
     const BlockBasedTableOptions& table_options) {
+  auto ret = table_options.block_cache.get()
+                 ? table_options.block_cache->memory_allocator()
+                 : nullptr;
+  if (ret != nullptr) {
+    throw std::runtime_error("d-rocksdb: not debugged");
+  }
+}
+
+inline MemoryAllocator* GetDataBlockMemoryAllocator(
+    const BlockBasedTableOptions& table_options) {
   return table_options.block_cache.get()
-             ? table_options.block_cache->memory_allocator()
+             ? table_options.block_cache->data_block_memory_allocator()
              : nullptr;
+}
+
+template <typename TBlocklike>
+inline MemoryAllocator* GetDataBlockMemoryAllocator(
+    const BlockBasedTableOptions& table_options) {
+  auto ret = table_options.block_cache.get()
+                 ? table_options.block_cache->data_block_memory_allocator()
+                 : nullptr;
+  if (ret != nullptr) {
+    throw std::runtime_error("d-rocksdb: not debugged");
+  }
 }
 
 inline MemoryAllocator* GetMemoryAllocatorForCompressedBlock(

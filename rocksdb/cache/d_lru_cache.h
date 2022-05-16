@@ -537,6 +537,7 @@ class DLRUCache
   DLRUCache(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
             double high_pri_pool_ratio, double rm_ratio,
             std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
+            std::shared_ptr<MemoryAllocator> data_block_memory_allocator = nullptr,
             bool use_adaptive_mutex = kDefaultToAdaptiveMutex,
             CacheMetadataChargePolicy metadata_charge_policy =
                 kDontChargeCacheMetadata);
