@@ -17,6 +17,11 @@ RemoteMemory::RemoteMemory(RemoteMemoryAllocator *rm_allocator,
   allocator_->init(ctx->rm_addr, ctx->rm_size);
 }
 
+RemoteMemory::~RemoteMemory() {
+  delete allocator_;
+  delete transport_;
+}
+
 RMRegion *RemoteMemory::rmalloc(size_t size) {
   RMRegion *rm_region = allocator_->rmalloc(size);
   return rm_region;
@@ -25,11 +30,6 @@ RMRegion *RemoteMemory::rmalloc(size_t size) {
 void RemoteMemory::print() {
   allocator_->print_size_info();
   allocator_->print(true);
-}
-
-RemoteMemory::~RemoteMemory() {
-  delete allocator_;
-  delete transport_;
 }
 
 void RemoteMemory::rmfree(RMRegion *rm_region) {
@@ -45,7 +45,6 @@ void RemoteMemory::rmfree(RMRegion *rm_region, size_t size) {
 
 int RemoteMemory::read(uint64_t rm_addr, void *buf, size_t size,
                        RMAsyncRequest *rm_async_request) {
-  // TODO: decide which conn_id to use
   // TODO: check whether size is valid
   while (!read_mutex_.try_lock())
     ;
@@ -127,6 +126,98 @@ void *RemoteMemory::get_write_buf() {
   return transport_->get_context()->bufs[1];
 }
 
+void RemoteMemory::init_lm(const std::shared_ptr<LocalMemory> &lm) {
+  if (local_memory_ == lm) {
+    return;
+  } else {
+    auto lm_mr = lm->get_lm_mr();
+    if (lm_mr) {
+      transport_->reg_lm(lm->get_lm_addr(), lm->get_lm_size(), lm_mr);
+    } else {
+      transport_->reg_lm(lm->get_lm_addr(), lm->get_lm_size());
+      const rdma::Context *ctx = transport_->get_context();
+      lm->set_lm_mr(ctx->lm_mr);
+    }
+    local_memory_ = lm;
+  }
+}
+
+// TODO: add mutex for different shard of lm
+int RemoteMemory::direct_read(
+    uint64_t rm_addr, void *lm_buf, size_t size,
+    RMAsyncDirectRequest *rm_async_direct_request = nullptr) {
+  // TODO: check whether size is valid
+  if (not local_memory_) {
+    throw std::runtime_error("local memory not initialized");
+  }
+  while (!read_mutex_.try_lock())
+    ;
+  const rdma::Context *ctx = transport_->get_context();
+
+  rdma::RDMAAsyncRequest *rdma_async_request = nullptr;
+  if (rm_async_direct_request) {
+    rdma_async_request = new rdma::RDMAAsyncRequest();
+    rm_async_direct_request->rdma_async_request = rdma_async_request;
+    rm_async_direct_request->is_read = true;
+    rm_async_direct_request->lm_value = lm_buf;
+    rm_async_direct_request->size = size;
+    rm_async_direct_request->mutex = &read_mutex_;
+  }
+
+  int ret = transport_->read_rm(ctx->conn_ids[0], (char *)lm_buf, size,
+                                local_memory_->get_lm_mr(), rm_addr,
+                                ctx->rm_rkey, rdma_async_request);
+  if (ret) {
+    allocator_->print();
+    throw "read from remote memory failed";
+  }
+
+  if (rm_async_direct_request == nullptr) {
+    // if async, let RMAsyncRequest unlock this mutex.
+    read_mutex_.unlock();
+  }
+  return ret;
+}
+
+int RemoteMemory::direct_write(
+    uint64_t rm_addr, void *lm_buf, size_t size,
+    RMAsyncDirectRequest *rm_async_direct_request = nullptr) {
+  // TODO: decide which conn_id to use
+  // TODO: check whether size is valid
+  if (not local_memory_) {
+    throw std::runtime_error("local memory not initialized");
+  }
+  while (!write_mutex_.try_lock())
+    ;
+  const rdma::Context *ctx = transport_->get_context();
+
+  rdma::RDMAAsyncRequest *rdma_async_request = nullptr;
+  if (rm_async_direct_request) {
+    rdma_async_request = new rdma::RDMAAsyncRequest();
+    rm_async_direct_request->rdma_async_request = rdma_async_request;
+    rm_async_direct_request->is_read = false;
+    rm_async_direct_request->lm_value = lm_buf;
+    rm_async_direct_request->size = size;
+    rm_async_direct_request->mutex = &write_mutex_;
+  }
+
+  int ret = transport_->write_rm(ctx->conn_ids[1], (char *)lm_buf, size,
+                                 local_memory_->get_lm_mr(), rm_addr,
+                                 ctx->rm_rkey, rdma_async_request);
+
+  if (rm_async_direct_request == nullptr) {
+    // if async, let RMAsyncRequest unlock this mutex.
+    write_mutex_.unlock();
+  }
+  if (ret) {
+    allocator_->print();
+    throw "write to remote memory failed";
+  }
+  return ret;
+}
+
+void RemoteMemory::deinit_lm() { transport_->dereg_lm(); }
+
 RemoteMemoryServer::RemoteMemoryServer(std::string server_name) {
   server_name_ = server_name;
   transport_ = new rdma::Transport(/*server=*/true, server_name_.c_str());
@@ -138,4 +229,4 @@ RemoteMemoryServer::~RemoteMemoryServer() {
   delete allocator_;
   delete transport_;
 }
-}  // namespace ROCKSDB_NAMESPACE
+} // namespace ROCKSDB_NAMESPACE

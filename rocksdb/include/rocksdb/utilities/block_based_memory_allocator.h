@@ -11,18 +11,6 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-struct MemoryRegion {
-  char *addr;
-  size_t size;  // representing real size, however, we always allocate a block
-  bool is_free;
-
-  struct MemoryRegion *prev;
-  struct MemoryRegion *next;
-
-  struct MemoryRegion *next_free;
-  struct MemoryRegion *prev_free;
-};
-
 class BlockBasedMemoryAllocator : public MemoryAllocator {
  private:
   std::mutex mutex_;
@@ -58,14 +46,14 @@ class BlockBasedMemoryAllocator : public MemoryAllocator {
    ***********************************************/
   // Allocate a block of at least size. Has to be thread-safe.
   void *Allocate(size_t size) override {
-    // return reinterpret_cast<void*>(new char[size]);
-    return (void *)rmalloc(size);
+    MemoryRegion *region = rmalloc(size);
+    return (void *)region;
   }
 
   // Deallocate previously allocated block. Has to be thread-safe.
   void Deallocate(void *p) override {
-    // delete[] static_cast<char*>(p);
-    rmfree(reinterpret_cast<MemoryRegion *>(p));
+    auto region = reinterpret_cast<MemoryRegion *>(p);
+    rmfree(region);
   }
 
   // Returns the memory size of the block allocated at p. The default

@@ -307,14 +307,13 @@ class BlockBasedTable : public TableReader {
   void UpdateCacheMissMetrics(BlockType block_type,
                               GetContext* get_context) const;
 
-  Cache::Handle* GetEntryFromCache(const CacheTier& cache_tier,
-                                   Cache* block_cache, const Slice& key,
-                                   BlockType block_type, const bool wait,
-                                   GetContext* get_context,
-                                   const Cache::CacheItemHelper* cache_helper,
-                                   const Cache::CreateCallback& create_cb,
-                                   Cache::Priority priority,
-                                   bool* from_rm) const;
+  Cache::Handle* GetEntryFromCache(
+      const CacheTier& cache_tier, Cache* block_cache, const Slice& key,
+      BlockType block_type, const bool wait, GetContext* get_context,
+      const Cache::CacheItemHelper* cache_helper,
+      const Cache::CreateCallback& create_cb,
+      const Cache::CreateFromUniquePtrCallback& create_from_ptr_cb,
+      Cache::Priority priority, bool* from_rm) const;
 
   template <typename TBlocklike>
   Status InsertEntryToCache(const CacheTier& cache_tier, Cache* block_cache,

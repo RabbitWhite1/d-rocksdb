@@ -78,4 +78,39 @@ extern Status NewJemallocNodumpAllocator(
     JemallocAllocatorOptions& options,
     std::shared_ptr<MemoryAllocator>* memory_allocator);
 
+struct MemoryRegion {
+  char *addr;
+  size_t size;  // representing real size, however, we always allocate a block
+  bool is_free;
+
+  struct MemoryRegion *prev;
+  struct MemoryRegion *next;
+
+  struct MemoryRegion *next_free;
+  struct MemoryRegion *prev_free;
+};
+
+struct CustomDeleter {
+  CustomDeleter(MemoryAllocator* a = nullptr,
+                MemoryRegion* mr = nullptr)
+      : allocator(a), memory_region(mr) {}
+
+  void operator()(char* ptr) const {
+    if (allocator) {
+      if (memory_region) {
+        allocator->Deallocate(reinterpret_cast<void*>(memory_region));
+      } else {
+        allocator->Deallocate(reinterpret_cast<void*>(ptr));
+      }
+    } else {
+      delete[] ptr;
+    }
+  }
+
+  MemoryAllocator* allocator;
+  MemoryRegion* memory_region;  // for `BlockBasedMemoryAllocator`
+};
+
+using CacheAllocationPtr = std::unique_ptr<char[], CustomDeleter>;
+
 }  // namespace ROCKSDB_NAMESPACE

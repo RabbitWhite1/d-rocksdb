@@ -367,13 +367,14 @@ Cache::Handle* BlockBasedTable::GetEntryFromCache(
     const CacheTier& cache_tier, Cache* block_cache, const Slice& key,
     BlockType block_type, const bool wait, GetContext* get_context,
     const Cache::CacheItemHelper* cache_helper,
-    const Cache::CreateCallback& create_cb, Cache::Priority priority,
-    bool* from_rm) const {
+    const Cache::CreateCallback& create_cb,
+    const Cache::CreateFromUniquePtrCallback& create_from_ptr_cb,
+    Cache::Priority priority, bool* from_rm) const {
   Cache::Handle* cache_handle = nullptr;
   if (cache_tier == CacheTier::kNonVolatileBlockTier) {
-    cache_handle =
-        block_cache->Lookup(key, cache_helper, create_cb, priority, wait,
-                            rep_->ioptions.statistics.get(), from_rm);
+    cache_handle = block_cache->Lookup(
+        key, cache_helper, create_cb, create_from_ptr_cb, priority, wait,
+        rep_->ioptions.statistics.get(), from_rm);
   } else {
     cache_handle = block_cache->Lookup(key, rep_->ioptions.statistics.get());
   }
@@ -1211,6 +1212,9 @@ Status BlockBasedTable::GetDataBlockFromCache(
   const FilterPolicy* filter_policy = rep_->filter_policy;
   Cache::CreateCallback create_cb = GetCreateCallback<TBlocklike>(
       read_amp_bytes_per_bit, statistics, using_zstd, filter_policy);
+  Cache::CreateFromUniquePtrCallback create_from_unique_ptr_cb =
+      GetCreateFromUniquePtrCallback<TBlocklike>(
+          read_amp_bytes_per_bit, statistics, using_zstd, filter_policy);
 
   // Lookup uncompressed cache first
   if (block_cache != nullptr) {
@@ -1220,7 +1224,7 @@ Status BlockBasedTable::GetDataBlockFromCache(
         rep_->ioptions.lowest_used_cache_tier, block_cache, cache_key,
         block_type, wait, get_context,
         BlocklikeTraits<TBlocklike>::GetCacheItemHelper(block_type), create_cb,
-        priority, from_rm);
+        create_from_unique_ptr_cb, priority, from_rm);
     if (cache_handle != nullptr) {
       block->SetCachedValue(
           reinterpret_cast<TBlocklike*>(block_cache->Value(cache_handle)),
@@ -1240,12 +1244,13 @@ Status BlockBasedTable::GetDataBlockFromCache(
   BlockContents contents;
   if (rep_->ioptions.lowest_used_cache_tier ==
       CacheTier::kNonVolatileBlockTier) {
+    throw std::runtime_error("not debugged");
     Cache::CreateCallback create_cb_special = GetCreateCallback<BlockContents>(
         read_amp_bytes_per_bit, statistics, using_zstd, filter_policy);
     block_cache_compressed_handle = block_cache_compressed->Lookup(
         cache_key,
         BlocklikeTraits<BlockContents>::GetCacheItemHelper(block_type),
-        create_cb_special, priority, true);
+        create_cb_special, nullptr /*not debugged*/, priority, true);
   } else {
     block_cache_compressed_handle =
         block_cache_compressed->Lookup(cache_key, statistics);
@@ -1513,8 +1518,10 @@ Status BlockBasedTable::MaybeReadBlockAndLoadToCache(
   bool is_cache_hit = false;
   bool from_rm = false;
 
-  std::chrono::high_resolution_clock::time_point begin =
-      std::chrono::high_resolution_clock::now();
+  // std::chrono::high_resolution_clock::time_point begin;
+  // if (std::is_same<TBlocklike, Block>::value) {
+  //   begin = std::chrono::high_resolution_clock::now();
+  // }
 
   if (block_cache != nullptr || block_cache_compressed != nullptr) {
     // create key for block cache
@@ -1542,8 +1549,10 @@ Status BlockBasedTable::MaybeReadBlockAndLoadToCache(
       }
     }
 
-    std::chrono::high_resolution_clock::time_point end_find_cache =
-        std::chrono::high_resolution_clock::now();
+    // std::chrono::high_resolution_clock::time_point end_find_cache;
+    // if (std::is_same<TBlocklike, Block>::value) {
+    //   end_find_cache = std::chrono::high_resolution_clock::now();
+    // }
 
     // Can't find the block from the cache. If I/O is allowed, read from the
     // file.
@@ -1597,28 +1606,34 @@ Status BlockBasedTable::MaybeReadBlockAndLoadToCache(
       if (s.ok()) {
         // If filling cache is allowed and a cache is configured, try to put the
         // block to the cache.
-        std::chrono::high_resolution_clock::time_point begin_put =
-            std::chrono::high_resolution_clock::now();
+
+        // std::chrono::high_resolution_clock::time_point begin_put;
+        // if (std::is_same<TBlocklike, Block>::value) {
+        //   begin_put = std::chrono::high_resolution_clock::now();
+        // }
         s = PutDataBlockToCache(key, block_cache, block_cache_compressed,
                                 block_entry, contents, raw_block_comp_type,
                                 uncompression_dict, memory_allocator,
                                 block_type, get_context);
-        std::chrono::high_resolution_clock::time_point end =
-            std::chrono::high_resolution_clock::now();
-        printf(
-            "cache miss Get took %ld ns, test took %ld ns, put took %ld ns, "
-            "read took %ld ns\n",
-            std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
-                .count(),
-            std::chrono::duration_cast<std::chrono::nanoseconds>(
-                end_find_cache - begin)
-                .count(),
-            std::chrono::duration_cast<std::chrono::nanoseconds>(end -
-                                                                 begin_put)
-                .count(),
-            std::chrono::duration_cast<std::chrono::nanoseconds>(begin_put -
-                                                                 end_find_cache)
-                .count());
+        // if (std::is_same<TBlocklike, Block>::value) {
+        //   std::chrono::high_resolution_clock::time_point end =
+        //       std::chrono::high_resolution_clock::now();
+        //   printf(
+        //       "cache miss Get took %ld ns, test took %ld ns, put took %ld
+        //       ns," " read took %ld ns\n",
+        //       std::chrono::duration_cast<std::chrono::nanoseconds>(end -
+        //       begin)
+        //           .count(),
+        //       std::chrono::duration_cast<std::chrono::nanoseconds>(
+        //           end_find_cache - begin)
+        //           .count(),
+        //       std::chrono::duration_cast<std::chrono::nanoseconds>(end -
+        //                                                            begin_put)
+        //           .count(),
+        //       std::chrono::duration_cast<std::chrono::nanoseconds>(
+        //           begin_put - end_find_cache)
+        //           .count());
+        // }
       }
     }
   }
@@ -1689,19 +1704,34 @@ Status BlockBasedTable::MaybeReadBlockAndLoadToCache(
 
   assert(s.ok() || block_entry->GetValue() == nullptr);
 
-  std::chrono::high_resolution_clock::time_point end =
-      std::chrono::high_resolution_clock::now();
-  if (is_cache_hit) {
-    if (from_rm) {
-      printf("\033[1;32mcache hit rm took %ld ns\033[0m\n",
-             std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
-                 .count());
-    } else {
-      printf("cache hit lm took %ld ns\n",
-             std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
-                 .count());
-    }
-  }
+  // if (std::is_same<TBlocklike, Block>::value) {
+  //   std::chrono::high_resolution_clock::time_point end =
+  //       std::chrono::high_resolution_clock::now();
+  //   if (is_cache_hit) {
+  //     if (from_rm) {
+  //       printf("\033[1;32mcache hit rm took %ld ns\033[0m\n",
+  //              std::chrono::duration_cast<std::chrono::nanoseconds>(end -
+  //              begin)
+  //                  .count());
+  //     } else {
+  //       printf("cache hit lm took %ld ns\n",
+  //              std::chrono::duration_cast<std::chrono::nanoseconds>(end -
+  //              begin)
+  //                  .count());
+  //     }
+  //   }
+  // }
+  // if (std::is_same<TBlocklike, Block>::value) {
+  //   if (is_cache_hit) {
+  //     if (from_rm) {
+  //       printf("from rm\n");
+  //     } else {
+  //       printf("from lm\n");
+  //     }
+  //   } else {
+  //     printf("from disk\n");
+  //   }
+  // }
   return s;
 }
 

@@ -56,6 +56,8 @@ class RemoteMemory {
 
   rdma::Transport *transport_;
   RemoteMemoryAllocator *allocator_;
+
+  std::shared_ptr<LocalMemory> local_memory_;
 };
 
 class RemoteMemoryServer {

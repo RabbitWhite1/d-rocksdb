@@ -31,11 +31,12 @@ class CacheShard {
                         const Cache::CacheItemHelper* helper, size_t charge,
                         Cache::Handle** handle, Cache::Priority priority) = 0;
   virtual Cache::Handle* Lookup(const Slice& key, uint32_t hash) = 0;
-  virtual Cache::Handle* Lookup(const Slice& key, uint32_t hash,
-                                const Cache::CacheItemHelper* helper,
-                                const Cache::CreateCallback& create_cb,
-                                Cache::Priority priority, bool wait,
-                                Statistics* stats, bool* from_rm) = 0;
+  virtual Cache::Handle* Lookup(
+      const Slice& key, uint32_t hash, const Cache::CacheItemHelper* helper,
+      const Cache::CreateCallback& create_cb,
+      const Cache::CreateFromUniquePtrCallback& create_from_ptr_cb,
+      Cache::Priority priority, bool wait, Statistics* stats,
+      bool* from_rm) = 0;
   virtual bool Release(Cache::Handle* handle, bool useful,
                        bool force_erase) = 0;
   virtual bool IsReady(Cache::Handle* handle) = 0;
@@ -82,9 +83,10 @@ class CacheShard {
 // Keys are sharded by the highest num_shard_bits bits of hash value.
 class ShardedCache : public Cache {
  public:
-  ShardedCache(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
-               std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
-               std::shared_ptr<MemoryAllocator> data_block_memory_allocator = nullptr);
+  ShardedCache(
+      size_t capacity, int num_shard_bits, bool strict_capacity_limit,
+      std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
+      std::shared_ptr<MemoryAllocator> data_block_memory_allocator = nullptr);
   virtual ~ShardedCache() = default;
   virtual CacheShard* GetShard(uint32_t shard) = 0;
   virtual const CacheShard* GetShard(uint32_t shard) const = 0;
@@ -102,10 +104,12 @@ class ShardedCache : public Cache {
                         Handle** handle = nullptr,
                         Priority priority = Priority::LOW) override;
   virtual Handle* Lookup(const Slice& key, Statistics* stats) override;
-  virtual Handle* Lookup(const Slice& key, const CacheItemHelper* helper,
-                         const CreateCallback& create_cb, Priority priority,
-                         bool wait, Statistics* stats = nullptr,
-                         bool* from_rm = nullptr) override;
+  virtual Handle* Lookup(
+      const Slice& key, const CacheItemHelper* helper,
+      const CreateCallback& create_cb,
+      const CreateFromUniquePtrCallback& create_from_unique_ptr_cb,
+      Priority priority, bool wait, Statistics* stats = nullptr,
+      bool* from_rm = nullptr) override;
   virtual bool Release(Handle* handle, bool useful,
                        bool force_erase = false) override;
   virtual bool IsReady(Handle* handle) override;

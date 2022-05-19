@@ -630,6 +630,7 @@ set(SOURCES
         cache/clock_cache.cc
         cache/lru_cache.cc
         cache/d_lru_cache.cc
+        cache/dd_lru_cache.cc
         cache/sharded_cache.cc
         cache/remote_memory/block_based_rm_allocator.cc
         cache/remote_memory/ff_based_rm_allocator.cc

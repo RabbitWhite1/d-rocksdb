@@ -327,13 +327,15 @@ class ALIGN_AS(CACHE_LINE_SIZE) LRUCacheShard final : public CacheShard {
   }
   // If helper_cb is null, the values of the following arguments don't
   // matter
-  virtual Cache::Handle* Lookup(const Slice& key, uint32_t hash,
-                                const ShardedCache::CacheItemHelper* helper,
-                                const ShardedCache::CreateCallback& create_cb,
-                                ShardedCache::Priority priority, bool wait,
-                                Statistics* stats, bool*) override;
+  virtual Cache::Handle* Lookup(
+      const Slice& key, uint32_t hash,
+      const ShardedCache::CacheItemHelper* helper,
+      const ShardedCache::CreateCallback& create_cb,
+      const ShardedCache::CreateFromUniquePtrCallback& /*create_from_ptr_cb*/,
+      ShardedCache::Priority priority, bool wait, Statistics* stats,
+      bool*) override;
   virtual Cache::Handle* Lookup(const Slice& key, uint32_t hash) override {
-    return Lookup(key, hash, nullptr, nullptr, Cache::Priority::LOW, true,
+    return Lookup(key, hash, nullptr, nullptr, nullptr, Cache::Priority::LOW, true,
                   nullptr, nullptr);
   }
   virtual bool Release(Cache::Handle* handle, bool /*useful*/,

@@ -419,8 +419,9 @@ void LRUCacheShard::Promote(LRUHandle* e) {
 Cache::Handle* LRUCacheShard::Lookup(
     const Slice& key, uint32_t hash,
     const ShardedCache::CacheItemHelper* helper,
-    const ShardedCache::CreateCallback& create_cb, Cache::Priority priority,
-    bool wait, Statistics* stats, bool*) {
+    const ShardedCache::CreateCallback& create_cb,
+    const ShardedCache::CreateFromUniquePtrCallback& /*create_from_ptr_cb*/,
+    Cache::Priority priority, bool wait, Statistics* stats, bool*) {
   LRUHandle* e = nullptr;
   {
     MutexLock l(&mutex_);

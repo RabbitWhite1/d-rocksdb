@@ -80,14 +80,15 @@ Cache::Handle* ShardedCache::Lookup(const Slice& key, Statistics* /*stats*/) {
   return GetShard(Shard(hash))->Lookup(key, hash);
 }
 
-Cache::Handle* ShardedCache::Lookup(const Slice& key,
-                                    const CacheItemHelper* helper,
-                                    const CreateCallback& create_cb,
-                                    Priority priority, bool wait,
-                                    Statistics* stats, bool* from_rm) {
+Cache::Handle* ShardedCache::Lookup(
+    const Slice& key, const CacheItemHelper* helper,
+    const CreateCallback& create_cb,
+    const CreateFromUniquePtrCallback& create_from_ptr_cb, Priority priority,
+    bool wait, Statistics* stats, bool* from_rm) {
   uint32_t hash = HashSlice(key);
   return GetShard(Shard(hash))
-      ->Lookup(key, hash, helper, create_cb, priority, wait, stats, from_rm);
+      ->Lookup(key, hash, helper, create_cb, create_from_ptr_cb, priority, wait,
+               stats, from_rm);
 }
 
 bool ShardedCache::IsReady(Handle* handle) {

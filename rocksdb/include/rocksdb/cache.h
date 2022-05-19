@@ -232,6 +232,92 @@ extern std::shared_ptr<Cache> NewDLRUCache(
 
 extern std::shared_ptr<Cache> NewDLRUCache(const DLRUCacheOptions& cache_opts);
 
+// DDLRUCache
+
+
+struct DDLRUCacheOptions {
+  // Capacity of the cache.
+  size_t capacity = 0;
+
+  // Cache is sharded into 2^num_shard_bits shards,
+  // by hash of key. Refer to NewDDLRUCache for further
+  // information.
+  int num_shard_bits = -1;
+
+  // If strict_capacity_limit is set,
+  // insert to the cache will fail when cache is full.
+  bool strict_capacity_limit = false;
+
+  // Percentage of cache reserved for high priority entries.
+  // If greater than zero, the DDLRU list will be split into a high-pri
+  // list and a low-pri list. High-pri entries will be inserted to the
+  // tail of high-pri list, while low-pri entries will be first inserted to
+  // the low-pri list (the midpoint). This is referred to as
+  // midpoint insertion strategy to make entries that never get hit in cache
+  // age out faster.
+  //
+  // See also
+  // BlockBasedTableOptions::cache_index_and_filter_blocks_with_high_priority.
+  double high_pri_pool_ratio = 0.5;
+
+  // Remote memory ratio
+  double rm_ratio = 0.0;
+
+  // If non-nullptr will use this allocator instead of system allocator when
+  // allocating memory for cache blocks. Call this method before you start using
+  // the cache!
+  //
+  // Caveat: when the cache is used as block cache, the memory allocator is
+  // ignored when dealing with compression libraries that allocate memory
+  // internally (currently only XPRESS).
+  std::shared_ptr<MemoryAllocator> memory_allocator;
+  std::shared_ptr<MemoryAllocator> data_block_memory_allocator;
+
+  // Whether to use adaptive mutexes for cache shards. Note that adaptive
+  // mutexes need to be supported by the platform in order for this to have any
+  // effect. The default value is true if RocksDB is compiled with
+  // -DROCKSDB_DEFAULT_TO_ADAPTIVE_MUTEX, false otherwise.
+  bool use_adaptive_mutex = kDefaultToAdaptiveMutex;
+
+  CacheMetadataChargePolicy metadata_charge_policy =
+      kDefaultCacheMetadataChargePolicy;
+
+  // A SecondaryCache instance to use a the non-volatile tier
+  std::shared_ptr<SecondaryCache> secondary_cache;
+
+  DDLRUCacheOptions() {}
+  DDLRUCacheOptions(
+      size_t _capacity, int _num_shard_bits, bool _strict_capacity_limit,
+      double _high_pri_pool_ratio, double _rm_ratio,
+      std::shared_ptr<MemoryAllocator> _memory_allocator = nullptr,
+      std::shared_ptr<MemoryAllocator> _data_block_memory_allocator = nullptr,
+      bool _use_adaptive_mutex = kDefaultToAdaptiveMutex,
+      CacheMetadataChargePolicy _metadata_charge_policy =
+          kDefaultCacheMetadataChargePolicy)
+      : capacity(_capacity),
+        num_shard_bits(_num_shard_bits),
+        strict_capacity_limit(_strict_capacity_limit),
+        high_pri_pool_ratio(_high_pri_pool_ratio),
+        rm_ratio(_rm_ratio),
+        memory_allocator(std::move(_memory_allocator)),
+        data_block_memory_allocator(std::move(_data_block_memory_allocator)),
+        use_adaptive_mutex(_use_adaptive_mutex),
+        metadata_charge_policy(_metadata_charge_policy) {}
+};
+
+extern std::shared_ptr<Cache> NewDDLRUCache(
+    size_t capacity, int num_shard_bits = -1,
+    bool strict_capacity_limit = false, double high_pri_pool_ratio = 0.5,
+    double rm_ratio = 0.0,
+    std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
+    std::shared_ptr<MemoryAllocator> data_block_memory_allocator = nullptr,
+    bool use_adaptive_mutex = kDefaultToAdaptiveMutex,
+    CacheMetadataChargePolicy metadata_charge_policy =
+        kDefaultCacheMetadataChargePolicy);
+
+extern std::shared_ptr<Cache> NewDDLRUCache(
+    const DDLRUCacheOptions& cache_opts);
+
 class Cache {
  public:
   // Depending on implementation, cache entries with high priority could be less
@@ -299,6 +385,8 @@ class Cache {
   // copy the contents into its own buffer.
   using CreateCallback = std::function<Status(const void* buf, size_t size,
                                               void** out_obj, size_t* charge)>;
+  using CreateFromUniquePtrCallback = std::function<Status(
+      CacheAllocationPtr, size_t size, void** out_obj, size_t* charge)>;
 
   Cache(std::shared_ptr<MemoryAllocator> allocator = nullptr,
         std::shared_ptr<MemoryAllocator> data_block_allocator = nullptr)
@@ -554,10 +642,12 @@ class Cache {
   // its not ready. The caller should then call Value() to check if the
   // item was successfully retrieved. If unsuccessful (perhaps due to an
   // IO error), Value() will return nullptr.
-  virtual Handle* Lookup(const Slice& key, const CacheItemHelper* /*helper_cb*/,
-                         const CreateCallback& /*create_cb*/,
-                         Priority /*priority*/, bool /*wait*/,
-                         Statistics* stats = nullptr, bool* from_rm = nullptr) {
+  virtual Handle* Lookup(
+      const Slice& key, const CacheItemHelper* /*helper_cb*/,
+      const CreateCallback& /*create_cb*/,
+      const CreateFromUniquePtrCallback& /*create_from_unique_ptr_cb*/,
+      Priority /*priority*/, bool /*wait*/, Statistics* stats = nullptr,
+      bool* from_rm = nullptr) {
     if (from_rm != nullptr) {
       *from_rm = false;
     }

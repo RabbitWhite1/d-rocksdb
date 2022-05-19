@@ -279,11 +279,12 @@ class ClockCacheShard final : public CacheShard {
     return Insert(key, hash, value, charge, helper->del_cb, handle, priority);
   }
   Cache::Handle* Lookup(const Slice& key, uint32_t hash) override;
-  Cache::Handle* Lookup(const Slice& key, uint32_t hash,
-                        const Cache::CacheItemHelper* /*helper*/,
-                        const Cache::CreateCallback& /*create_cb*/,
-                        Cache::Priority /*priority*/, bool /*wait*/,
-                        Statistics* /*stats*/, bool* /*from_rm*/) override {
+  Cache::Handle* Lookup(
+      const Slice& key, uint32_t hash, const Cache::CacheItemHelper* /*helper*/,
+      const Cache::CreateCallback& /*create_cb*/,
+      const Cache::CreateFromUniquePtrCallback& /*create_from_ptr_cb*/,
+      Cache::Priority /*priority*/, bool /*wait*/, Statistics* /*stats*/,
+      bool* /*from_rm*/) override {
     return Lookup(key, hash);
   }
   bool Release(Cache::Handle* handle, bool /*useful*/,

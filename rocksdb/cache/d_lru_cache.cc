@@ -116,8 +116,7 @@ DLRUCacheShard::DLRUCacheShard(size_t capacity, bool strict_capacity_limit,
                                CacheMetadataChargePolicy metadata_charge_policy,
                                int max_upper_hash_bits,
                                const std::shared_ptr<RemoteMemory>&,
-                               const size_t shard_id,
-                               const std::shared_ptr<LocalMemory>& local_memory)
+                               const size_t shard_id)
     : capacity_(0),
       high_pri_pool_usage_(0),
       strict_capacity_limit_(strict_capacity_limit),
@@ -128,8 +127,7 @@ DLRUCacheShard::DLRUCacheShard(size_t capacity, bool strict_capacity_limit,
       usage_(0),
       lm_lru_usage_(0),
       mutex_(use_adaptive_mutex),
-      shard_id_(shard_id),
-      local_memory_(local_memory) {
+      shard_id_(shard_id) {
   set_metadata_charge_policy(metadata_charge_policy);
   // Make empty circular linked list
   lm_lru_.next = &lm_lru_;
@@ -145,7 +143,6 @@ DLRUCacheShard::DLRUCacheShard(size_t capacity, bool strict_capacity_limit,
     remote_memory_ = std::make_shared<RemoteMemory>(
         new BlockBasedRemoteMemoryAllocator(4096ul), server_ip,
         capacity * rm_ratio, shard_id_);
-    remote_memory_->init_lm(local_memory_);
   } else {
     remote_memory_ = nullptr;
   }
@@ -702,8 +699,10 @@ Status DLRUCacheShard::InsertItem(DLRUHandle* e, Cache::Handle** handle,
 Cache::Handle* DLRUCacheShard::Lookup(
     const Slice& key, uint32_t hash,
     const ShardedCache::CacheItemHelper* /*helper*/,
-    const ShardedCache::CreateCallback& create_cb, Cache::Priority /*priority*/,
-    bool /*wait*/, Statistics* /*stats*/, bool* from_rm) {
+    const ShardedCache::CreateCallback& create_cb,
+    const ShardedCache::CreateFromUniquePtrCallback& /*create_from_ptr_cb*/,
+    Cache::Priority /*priority*/, bool /*wait*/, Statistics* /*stats*/,
+    bool* from_rm) {
   DLRUHandle* e = nullptr;
   // DLRUHandle* last_evicted_handle = nullptr;
 
@@ -1113,29 +1112,21 @@ DLRUCache::DLRUCache(size_t capacity, int num_shard_bits,
                      bool strict_capacity_limit, double high_pri_pool_ratio,
                      double rm_ratio,
                      std::shared_ptr<MemoryAllocator> allocator,
-                     std::shared_ptr<MemoryAllocator> data_block_allocator,
                      bool use_adaptive_mutex,
                      CacheMetadataChargePolicy metadata_charge_policy)
     : ShardedCache(capacity, num_shard_bits, strict_capacity_limit,
-                   std::move(allocator), std::move(data_block_allocator)) {
+                   std::move(allocator)) {
   num_shards_ = 1 << num_shard_bits;
   shards_ = reinterpret_cast<DLRUCacheShard*>(
       port::cacheline_aligned_alloc(sizeof(DLRUCacheShard) * num_shards_));
   size_t per_shard = (capacity + (num_shards_ - 1)) / num_shards_;
-  printf(
-      "DLRUCache num_shards=%d, per_shard=%lu, rm_ratio=%lf, "
-      "data_block_memory_allocator: %p\n",
-      num_shards_, per_shard, rm_ratio, data_block_memory_allocator());
-  if (data_block_memory_allocator()) {
-    local_memory_ =
-        std::make_shared<LocalMemory>(data_block_memory_allocator());
-  }
+  printf("DLRUCache num_shards=%d, per_shard=%lu, rm_ratio=%lf\n", num_shards_,
+         per_shard, rm_ratio);
   for (int i = 0; i < num_shards_; i++) {
-    new (&shards_[i])
-        DLRUCacheShard(per_shard, strict_capacity_limit, high_pri_pool_ratio,
-                       rm_ratio, use_adaptive_mutex, metadata_charge_policy,
-                       /* max_upper_hash_bits */ 32 - num_shard_bits, nullptr,
-                       /*shard_id=*/i, local_memory_);
+    new (&shards_[i]) DLRUCacheShard(
+        per_shard, strict_capacity_limit, high_pri_pool_ratio, rm_ratio,
+        use_adaptive_mutex, metadata_charge_policy,
+        /* max_upper_hash_bits */ 32 - num_shard_bits, nullptr, /*shard_id=*/i);
   }
 }
 
@@ -1209,9 +1200,8 @@ void DLRUCache::WaitAll(std::vector<Handle*>& /*handles*/) {
 std::shared_ptr<Cache> NewDLRUCache(
     size_t capacity, int num_shard_bits, bool strict_capacity_limit,
     double high_pri_pool_ratio, double rm_ratio,
-    std::shared_ptr<MemoryAllocator> memory_allocator,
-    std::shared_ptr<MemoryAllocator> data_block_memory_allocator,
-    bool use_adaptive_mutex, CacheMetadataChargePolicy metadata_charge_policy) {
+    std::shared_ptr<MemoryAllocator> memory_allocator, bool use_adaptive_mutex,
+    CacheMetadataChargePolicy metadata_charge_policy) {
   if (num_shard_bits >= 20) {
     return nullptr;  // the cache cannot be sharded into too many fine pieces
   }
@@ -1228,8 +1218,8 @@ std::shared_ptr<Cache> NewDLRUCache(
   }
   return std::make_shared<DLRUCache>(
       capacity, num_shard_bits, strict_capacity_limit, high_pri_pool_ratio,
-      rm_ratio, memory_allocator, data_block_memory_allocator,
-      use_adaptive_mutex, metadata_charge_policy);
+      rm_ratio, std::move(memory_allocator), use_adaptive_mutex,
+      metadata_charge_policy);
 }
 
 std::shared_ptr<Cache> NewDLRUCache(const DLRUCacheOptions& cache_opts) {
@@ -1237,7 +1227,6 @@ std::shared_ptr<Cache> NewDLRUCache(const DLRUCacheOptions& cache_opts) {
       cache_opts.capacity, cache_opts.num_shard_bits,
       cache_opts.strict_capacity_limit, cache_opts.high_pri_pool_ratio,
       cache_opts.rm_ratio, cache_opts.memory_allocator,
-      cache_opts.data_block_memory_allocator, cache_opts.use_adaptive_mutex,
-      cache_opts.metadata_charge_policy);
+      cache_opts.use_adaptive_mutex, cache_opts.metadata_charge_policy);
 }
 }  // namespace ROCKSDB_NAMESPACE

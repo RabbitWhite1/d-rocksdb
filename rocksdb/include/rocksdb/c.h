@@ -76,6 +76,7 @@ typedef struct rocksdb_restore_options_t rocksdb_restore_options_t;
 typedef struct rocksdb_memory_allocator_t rocksdb_memory_allocator_t;
 typedef struct rocksdb_lru_cache_options_t rocksdb_lru_cache_options_t;
 typedef struct rocksdb_d_lru_cache_options_t rocksdb_d_lru_cache_options_t;
+typedef struct rocksdb_dd_lru_cache_options_t rocksdb_dd_lru_cache_options_t;
 typedef struct rocksdb_cache_t rocksdb_cache_t;
 typedef struct rocksdb_compactionfilter_t rocksdb_compactionfilter_t;
 typedef struct rocksdb_compactionfiltercontext_t
@@ -1774,12 +1775,23 @@ extern ROCKSDB_LIBRARY_API void rocksdb_d_lru_cache_options_set_capacity(
 extern ROCKSDB_LIBRARY_API void rocksdb_d_lru_cache_options_set_memory_allocator(
     rocksdb_d_lru_cache_options_t*, rocksdb_memory_allocator_t*);
 
+extern ROCKSDB_LIBRARY_API rocksdb_dd_lru_cache_options_t*
+rocksdb_dd_lru_cache_options_create(void);
+extern ROCKSDB_LIBRARY_API void rocksdb_dd_lru_cache_options_destroy(
+    rocksdb_dd_lru_cache_options_t*);
+extern ROCKSDB_LIBRARY_API void rocksdb_dd_lru_cache_options_set_capacity(
+    rocksdb_dd_lru_cache_options_t*, size_t);
+extern ROCKSDB_LIBRARY_API void rocksdb_dd_lru_cache_options_set_memory_allocator(
+    rocksdb_dd_lru_cache_options_t*, rocksdb_memory_allocator_t*);
+
 extern ROCKSDB_LIBRARY_API rocksdb_cache_t* rocksdb_cache_create_lru(
     size_t capacity);
 extern ROCKSDB_LIBRARY_API rocksdb_cache_t* rocksdb_cache_create_lru_opts(
     rocksdb_lru_cache_options_t*);
-extern ROCKSDB_LIBRARY_API rocksdb_cache_t* rocksdb_cache_create_rm_lru_opts(
+extern ROCKSDB_LIBRARY_API rocksdb_cache_t* rocksdb_cache_create_d_lru_opts(
     rocksdb_d_lru_cache_options_t*);
+extern ROCKSDB_LIBRARY_API rocksdb_cache_t* rocksdb_cache_create_dd_lru_opts(
+    rocksdb_dd_lru_cache_options_t*);
 extern ROCKSDB_LIBRARY_API void rocksdb_cache_destroy(rocksdb_cache_t* cache);
 extern ROCKSDB_LIBRARY_API void rocksdb_cache_disown_data(
     rocksdb_cache_t* cache);

@@ -11,6 +11,7 @@
 
 #include "cache/lru_cache.h"
 #include "cache/d_lru_cache.h"
+#include "cache/dd_lru_cache.h"
 #include "rocksdb/secondary_cache.h"
 #include "rocksdb/utilities/customizable_util.h"
 #include "rocksdb/utilities/options_type.h"
@@ -49,6 +50,23 @@ static std::unordered_map<std::string, OptionTypeInfo>
           OptionTypeFlags::kMutable}},
         {"high_pri_pool_ratio",
          {offsetof(struct DLRUCacheOptions, high_pri_pool_ratio),
+          OptionType::kDouble, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+};
+static std::unordered_map<std::string, OptionTypeInfo>
+    dd_lru_cache_options_type_info = {
+        {"capacity",
+         {offsetof(struct DDLRUCacheOptions, capacity), OptionType::kSizeT,
+          OptionVerificationType::kNormal, OptionTypeFlags::kMutable}},
+        {"num_shard_bits",
+         {offsetof(struct DDLRUCacheOptions, num_shard_bits), OptionType::kInt,
+          OptionVerificationType::kNormal, OptionTypeFlags::kMutable}},
+        {"strict_capacity_limit",
+         {offsetof(struct DDLRUCacheOptions, strict_capacity_limit),
+          OptionType::kBoolean, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+        {"high_pri_pool_ratio",
+         {offsetof(struct DDLRUCacheOptions, high_pri_pool_ratio),
           OptionType::kDouble, OptionVerificationType::kNormal,
           OptionTypeFlags::kMutable}},
 };

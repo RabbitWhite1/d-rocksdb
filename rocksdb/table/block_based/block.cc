@@ -981,6 +981,7 @@ Block::Block(BlockContents&& contents, size_t read_amp_bytes_per_bit,
       size_(contents_.data.size()),
       restart_offset_(0),
       num_restarts_(0) {
+  assert(data_ != 0);
   TEST_SYNC_POINT("Block::Block:0");
   if (size_ < sizeof(uint32_t)) {
     size_ = 0;  // Error marker

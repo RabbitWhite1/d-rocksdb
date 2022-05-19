@@ -198,7 +198,7 @@ int rdma::Transport::init_resources(struct rdma_addrinfo *rai) {
 
   /* We need to bind the ID to a particular RDMA device
    * This is done by resolving the address or binding to the address */
-  printf("[%-16s] Resolving/Binding address\n", "Init");
+  // printf("[%-16s] Resolving/Binding address\n", "Init");
   if (ctx_->server == false) {
     ret = rdma_resolve_addr(ctx_->srq_id, NULL, rai->ai_dst_addr, 1000);
     if (ret) {
@@ -223,7 +223,6 @@ int rdma::Transport::init_resources(struct rdma_addrinfo *rai) {
     }
   }
   /* Create the memory regions being used in this example */
-  printf("[%-16s] Register memory region...\n", "Init");
   ctx_->recv_mr = rdma_reg_msgs(ctx_->srq_id, ctx_->recv_buf, ctx_->msg_length);
   if (!ctx_->recv_mr) {
     VERB_ERR("rdma_reg_msgs recv_mr", -1);
@@ -250,7 +249,6 @@ int rdma::Transport::init_resources(struct rdma_addrinfo *rai) {
     }
   }
   /* Create our shared receive queue */
-  printf("[%-16s] Create shared receive queue...\n", "Init");
   struct ibv_srq_init_attr srq_attr;
   memset(&srq_attr, 0, sizeof(srq_attr));
   srq_attr.attr.max_wr = ctx_->max_wr;
@@ -263,7 +261,6 @@ int rdma::Transport::init_resources(struct rdma_addrinfo *rai) {
   /* Save the SRQ in our context so we can assign it to other QPs later */
   ctx_->srq = ctx_->srq_id->srq;
   /* Post our receive buffers on the SRQ */
-  printf("[%-16s] Post recv to SRQ...\n", "Init");
   for (i = 0; i < ctx_->max_wr; i++) {
     ret = rdma_post_recv(ctx_->srq_id, NULL, ctx_->recv_buf, ctx_->msg_length,
                          ctx_->recv_mr);
@@ -274,8 +271,6 @@ int rdma::Transport::init_resources(struct rdma_addrinfo *rai) {
   }
 
   /* Create a completion channel to use with the SRQ CQ */
-  printf("[%-16s] Create Completion Channel & Completion Queue for SRQ ...\n",
-         "Init");
   ctx_->srq_cq_channel = ibv_create_comp_channel(ctx_->srq_id->verbs);
   if (!ctx_->srq_cq_channel) {
     VERB_ERR("ibv_create_comp_channel", -1);
@@ -289,7 +284,6 @@ int rdma::Transport::init_resources(struct rdma_addrinfo *rai) {
     return -1;
   }
   /* Make sure that we get notified on the first completion */
-  printf("[%-16s] Make SRQ req notify ...\n", "Init");
   ret = ibv_req_notify_cq(ctx_->srq_cq, 0);
   if (ret) {
     VERB_ERR("ibv_req_notify_cq", ret);
@@ -460,8 +454,6 @@ int rdma::Transport::connect_server(struct rdma_addrinfo *rai) {
       return ret;
     }
     // send connect request
-    printf("[%-16s] connecting... (ctx_->conn_ids[%d]=%p)\n", "Info", i,
-           ctx_->conn_ids[i]);
     ret = rdma_connect(ctx_->conn_ids[i], NULL);
     if (ret) {
       VERB_ERR("rdma_connect", ret);
@@ -924,4 +916,31 @@ int rdma::Transport::recv(rdma_cm_id *cm_id, char *lm_addr, size_t lm_length,
   } while (ne);
 
   return 0;
+}
+
+void rdma::Transport::reg_lm(char *lm_buf, size_t lm_size,
+                             struct ibv_mr *lm_mr) {
+  assert(ctx_->server == false && "only client will init the buf here");
+  int mr_flags =
+      IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ;
+  ctx_->lm_buf = lm_buf;
+  ctx_->lm_size = lm_size;
+  if (lm_mr) {
+    ctx_->lm_mr = lm_mr;
+  } else {
+    ctx_->lm_mr = ibv_reg_mr(ctx_->srq_id->pd, lm_buf, lm_size, mr_flags);
+    if (!ctx_->lm_mr) {
+      throw std::runtime_error("reg lm mr failed");
+    }
+  }
+}
+
+void rdma::Transport::dereg_lm() {
+  assert(ctx_->server == false && "only client will init the buf here");
+  ctx_->lm_buf = nullptr;
+  ctx_->lm_size = 0;
+  int ret = ibv_dereg_mr(ctx_->lm_mr);
+  if (ret) {
+    throw std::runtime_error("dereg lm mr failed");
+  }
 }

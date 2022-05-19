@@ -68,13 +68,19 @@ struct Context {
   char *recv_buf;
   /*
    * For client, more bufs enbale higher concurrency, its size is `qp_count`
-   * For server, it has to have a buf (i.e., rm) for each shard, its size is `max_num_shards`
+   * For server, it has to have a buf (i.e., rm) for each shard, its size is
+   * `max_num_shards`
    */
   char **bufs;
   /* remote memory info (client only) */
   uint32_t rm_rkey;
   uint64_t rm_addr;
   size_t rm_size;
+
+  // for all local memory if enable BlockBasedMemoryAllocator
+  char *lm_buf;
+  size_t lm_size;
+  ibv_mr *lm_mr;
 
   /* client only*/
   size_t shard_id;
@@ -110,10 +116,11 @@ class Transport {
   // TODO: target on 1 qp now, will extent it to qp pool.
  public:
   // server
-  Transport(bool server, const char *server_name, size_t max_num_shards=DEFAULT_MAX_SHARDS);
+  Transport(bool server, const char *server_name,
+            size_t max_num_shards = DEFAULT_MAX_SHARDS);
   // client
-  Transport(bool server, const char *server_name, size_t rm_size, size_t shard_id,
-            size_t client_qp_count = DEFAULT_MAX_CLIENT_QP,
+  Transport(bool server, const char *server_name, size_t rm_size,
+            size_t shard_id, size_t client_qp_count = DEFAULT_MAX_CLIENT_QP,
             size_t local_buf_size = DEFAULT_BUF_LENGTH);
   ~Transport();
 
@@ -129,6 +136,9 @@ class Transport {
            struct ibv_mr *send_mr);
   int recv(rdma_cm_id *cm_id, char *lm_addr, size_t lm_length,
            struct ibv_mr *recv_mr);
+
+  void reg_lm(char *lm_buf, size_t lm_size, struct ibv_mr *lm_mr = nullptr);
+  void dereg_lm();
 
  private:
   struct rdma::Context *ctx_;

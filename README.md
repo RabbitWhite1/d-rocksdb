@@ -47,8 +47,9 @@
 
 - [x] local BlockBasedMemoryAllocator
 - [x] register local BlockBasedMemoryAllocator for RDMA
-  - [ ] [debug] has performance degration (should not)
 - [ ] directly read/write to avoid copy
+  - [x] sync version
+  - [ ] async version
 
 ### YCSB
 

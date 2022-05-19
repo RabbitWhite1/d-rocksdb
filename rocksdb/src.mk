@@ -7,7 +7,9 @@ LIB_SOURCES =                                                   \
   cache/clock_cache.cc                                          \
   cache/lru_cache.cc                                            \
   cache/d_lru_cache.cc                                          \
+  cache/dd_lru_cache.cc                                         \
   cache/sharded_cache.cc                                        \
+  cache/remote_memory/block_based_memory_allocator.cc           \
   cache/remote_memory/block_based_rm_allocator.cc               \
   cache/remote_memory/lm.cc                                     \
   cache/remote_memory/ff_based_rm_allocator.cc                  \
@@ -243,7 +245,6 @@ LIB_SOURCES =                                                   \
   utilities/blob_db/blob_db_impl.cc                             \
   utilities/blob_db/blob_db_impl_filesnapshot.cc                \
   utilities/blob_db/blob_file.cc                                \
-  utilities/block_based_memory_allocator.cc                     \
   utilities/cache_dump_load.cc                                  \
   utilities/cache_dump_load_impl.cc                             \
   utilities/cassandra/cassandra_compaction_filter.cc            \
