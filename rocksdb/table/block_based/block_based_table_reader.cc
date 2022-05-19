@@ -1619,8 +1619,7 @@ Status BlockBasedTable::MaybeReadBlockAndLoadToCache(
         //   std::chrono::high_resolution_clock::time_point end =
         //       std::chrono::high_resolution_clock::now();
         //   printf(
-        //       "cache miss Get took %ld ns, test took %ld ns, put took %ld
-        //       ns," " read took %ld ns\n",
+        //       "cache miss Get took %ld ns, test took %ld ns, put took %ld ns," " read took %ld ns\n",
         //       std::chrono::duration_cast<std::chrono::nanoseconds>(end -
         //       begin)
         //           .count(),
@@ -1719,17 +1718,6 @@ Status BlockBasedTable::MaybeReadBlockAndLoadToCache(
   //              begin)
   //                  .count());
   //     }
-  //   }
-  // }
-  // if (std::is_same<TBlocklike, Block>::value) {
-  //   if (is_cache_hit) {
-  //     if (from_rm) {
-  //       printf("from rm\n");
-  //     } else {
-  //       printf("from lm\n");
-  //     }
-  //   } else {
-  //     printf("from disk\n");
   //   }
   // }
   return s;

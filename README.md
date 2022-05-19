@@ -43,13 +43,13 @@
 - [x] overlap rdma read/write as much as possible
   - [x] overlap read/write exchange in Lookup
 
-#### Improved Version v3.0.0
+#### Improved Version v3.0.0 (actually worse)
 
 - [x] local BlockBasedMemoryAllocator
 - [x] register local BlockBasedMemoryAllocator for RDMA
-- [ ] directly read/write to avoid copy
+- [x] directly read/write to avoid copy
   - [x] sync version
-  - [ ] async version
+  - [x] async version
 
 ### YCSB
 

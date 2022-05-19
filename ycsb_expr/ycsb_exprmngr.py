@@ -244,8 +244,8 @@ if __name__ == '__main__':
     #########################################
     workload = 'c'
     operationcount = 40000000
-    cache_size = int(256*1024**2)
-    recordcount = 1342177
+    cache_size = int(32*1024**3)
+    recordcount = 134217728
     threads = 16
     rm_ratio = 0.0
     table_cache_numshardbits = 6

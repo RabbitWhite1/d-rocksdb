@@ -517,11 +517,11 @@ Status DDLRUCacheShard::InsertItem(DDLRUHandle* e, Cache::Handle** handle,
         // 1. evict rm_entry from RM to free enough space for this lm_entry
         size_t lm_entry_slice_size =
             reinterpret_cast<Block*>(lm_entry->value)->size();
+        RMRegion* rm_region = EvictFromRMLRUAndFreeHandle(lm_entry_slice_size);
         if (last_evicted_handle) {
           WaitDirectMove(last_evicted_handle);
           last_evicted_handle = nullptr;
         }
-        RMRegion* rm_region = EvictFromRMLRUAndFreeHandle(lm_entry_slice_size);
         // TODO: if rm is full, and cannot evict enough space for putting entry
         //     from lm, then we directly evict lm_entry
         // 2. insert lm_entry to RM
@@ -529,8 +529,6 @@ Status DDLRUCacheShard::InsertItem(DDLRUHandle* e, Cache::Handle** handle,
         DirectMoveValueToRM(lm_entry, move_req, rm_region);
         // 3. mark last_evicted_handle
         last_evicted_handle = lm_entry;
-        WaitDirectMove(lm_entry);       // sync
-        last_evicted_handle = nullptr;  // sync
       }
     } else {
       EvictFromLRU(total_charge, &last_reference_list);
@@ -632,22 +630,20 @@ Cache::Handle* DDLRUCacheShard::Lookup(
     bool* from_rm) {
   DDLRUHandle* e = nullptr;
 
-  // std::chrono::high_resolution_clock::time_point begin, rm_lru_remove_end,
-  //     fetch_req_end, evict_from_lm_end, last_evict_end, evict_rm_end,
-  //     move_req_end, insert_rm_lru_end, fetch_wait_end, final_wait_end;
-  // begin = std::chrono::high_resolution_clock::now();
+  // std::chrono::high_resolution_clock::time_point begin, undo_end, req_fetch_end,
+  //     evict_from_lm_lru_end, wait_prev_end, evict_from_rm_lru_end, req_move_end,
+  //     wait_fetch_end;
+  // begin = undo_end = req_fetch_end = std::chrono::high_resolution_clock::now();
   {
     MutexLock l(&mutex_);
     e = table_.Lookup(key, hash);
     if (e != nullptr) {
       assert(e->InCache());
-      if (e->IsLocal() && !e->HasRefs()) {
-        // The entry is in LMLRU since it's in hash, in local and has no
-        // references external
-        LMLRU_Remove(e);
-      }
       if (e->IsLocal() && !e->IsMovingToRM()) {
         if (!e->HasRefs()) {
+          // The entry is in LMLRU since it's in hash, in local and has no
+          // references external
+          LMLRU_Remove(e);
         }
         *from_rm = false;
       } else {
@@ -662,6 +658,7 @@ Cache::Handle* DDLRUCacheShard::Lookup(
           // space in lm; although we still need to do eviction to guarantee
           // local space doesn't overflow
           requiring_lm_slice_size = 0;
+          // undo_end = std::chrono::high_resolution_clock::now();
         } else {
           assert(!e->IsLocal() && !e->IsMovingToRM());
           // 1. remove from RMLRU and fetch value
@@ -672,13 +669,14 @@ Cache::Handle* DDLRUCacheShard::Lookup(
           assert(e != last_evicted_handle);
           direct_fetch_req = new RMAsyncDirectRequest();
           DirectFetchValueFromRM(e, direct_fetch_req);
-          // WaitDirectFetch(e, create_from_ptr_cb);  // sync
-          // direct_fetch_req = nullptr;              // sync
+          // req_fetch_end = std::chrono::high_resolution_clock::now();
         }
 
         // 2. evict to free enough space for this entry
         autovector<DDLRUHandle*> evict_to_rm_list;
         EvictFromLMLRU(requiring_lm_slice_size, &evict_to_rm_list);
+
+        // evict_from_lm_lru_end = std::chrono::high_resolution_clock::now();
 
         size_t num_evcit_to_rm = evict_to_rm_list.size();
         size_t i = 0;
@@ -698,37 +696,53 @@ Cache::Handle* DDLRUCacheShard::Lookup(
             }
             last_evicted_handle = nullptr;
           }
+          // wait_prev_end = std::chrono::high_resolution_clock::now();
           RMRegion* rm_region =
               EvictFromRMLRUAndFreeHandle(lm_entry_slice_size);
+          // evict_from_rm_lru_end = std::chrono::high_resolution_clock::now();
 
-          // 2.2. insert lm_entry to RM
+          // 2.2. move value of `lm_entry` to remote
           RMAsyncDirectRequest* move_req = new RMAsyncDirectRequest();
           DirectMoveValueToRM(lm_entry, move_req, rm_region);
           last_evicted_handle = lm_entry;
-          WaitDirectMove(lm_entry);       // sync
-          move_req = nullptr;             // sync
-          last_evicted_handle = nullptr;  // sync
-
-          // 2.3. wait for the read request
-          if (i == 0 and direct_fetch_req != nullptr) {
-            WaitDirectFetch(e, create_from_ptr_cb);
-          }
+          // req_move_end = std::chrono::high_resolution_clock::now();
         }
 
-        if (local_memory_) {
-          if (last_evicted_handle) {
-            if (last_evicted_handle == e) {
-              throw std::runtime_error("last_evicted_handle == e");
-            }
-            WaitDirectMove(e);
-            last_evicted_handle = nullptr;
-          }
-        }
-        if (i == 0 and direct_fetch_req != nullptr) {
+        if (direct_fetch_req != nullptr) {
           WaitDirectFetch(e, create_from_ptr_cb);
         }
+        // wait_fetch_end = std::chrono::high_resolution_clock::now();
 
         *from_rm = true;
+        // printf(
+        //     "(%lu) undo=%lu ns, req_fetch=%lu ns, evict_from_lm_lru=%lu ns, "
+        //     "wait_prev=%lu ns, evict_from_rm_lru=%lu ns, req_move=%lu ns, "
+        //     "wait_fetch=%lu ns, total=%lu ns\n",
+        //     num_evcit_to_rm,
+        //     std::chrono::duration_cast<std::chrono::nanoseconds>(undo_end -
+        //                                                          begin)
+        //         .count(),
+        //     std::chrono::duration_cast<std::chrono::nanoseconds>(req_fetch_end -
+        //                                                          begin)
+        //         .count(),
+        //     std::chrono::duration_cast<std::chrono::nanoseconds>(
+        //         evict_from_lm_lru_end - req_fetch_end)
+        //         .count(),
+        //     std::chrono::duration_cast<std::chrono::nanoseconds>(
+        //         wait_prev_end - evict_from_lm_lru_end)
+        //         .count(),
+        //     std::chrono::duration_cast<std::chrono::nanoseconds>(
+        //         evict_from_rm_lru_end - wait_prev_end)
+        //         .count(),
+        //     std::chrono::duration_cast<std::chrono::nanoseconds>(
+        //         req_move_end - evict_from_rm_lru_end)
+        //         .count(),
+        //     std::chrono::duration_cast<std::chrono::nanoseconds>(
+        //         wait_fetch_end - req_move_end)
+        //         .count(),
+        //     std::chrono::duration_cast<std::chrono::nanoseconds>(
+        //         wait_fetch_end - begin)
+        //         .count());
       }
       e->Ref();
       e->SetHit();
@@ -993,8 +1007,8 @@ void DDLRUCacheShard::WaitDirectMoveAndUndo(DDLRUHandle* handle) {
 
   e->SetLocal(true);
   e->SetMovingToRM(false);
-  size_t slice_size = reinterpret_cast<Block*>(e->value)->size();
-  assert(slice_size < 5000);
+  // size_t slice_size = reinterpret_cast<Block*>(e->value)->size();
+  // assert(slice_size < 5000);
 
   delete rm_async_direct_request;
 }
@@ -1023,8 +1037,8 @@ void DDLRUCacheShard::WaitDirectFetch(
   e->SetFetchingFromRM(false);
   e->slice_size = 0;
   e->SetLocal(true);
-  size_t slice_size = reinterpret_cast<Block*>(e->value)->size();
-  assert(slice_size < 5000);
+  // size_t slice_size = reinterpret_cast<Block*>(e->value)->size();
+  // assert(slice_size < 5000);
 
   delete rm_async_direct_request;
 }
