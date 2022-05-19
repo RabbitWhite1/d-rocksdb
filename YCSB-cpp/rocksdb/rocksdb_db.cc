@@ -350,29 +350,29 @@ void RocksdbDB::GetOptions(
     printf("cache_size: %lu, table_cache_numshardbits: %d\n", cache_size,
            table_cache_numshardbits);
     if (cache_size > 0) {
-      {
-        rocksdb::DLRUCacheOptions cache_opts;
-        cache_opts.capacity = cache_size;
-        cache_opts.num_shard_bits = table_cache_numshardbits;
-        cache_opts.strict_capacity_limit = false;
-        cache_opts.high_pri_pool_ratio = 0.5;
-        cache_opts.rm_ratio = rm_ratio;
-        block_cache = rocksdb::NewDLRUCache(cache_opts);
-      }
       // {
-      //   rocksdb::DDLRUCacheOptions cache_opts;
+      //   rocksdb::DLRUCacheOptions cache_opts;
       //   cache_opts.capacity = cache_size;
       //   cache_opts.num_shard_bits = table_cache_numshardbits;
       //   cache_opts.strict_capacity_limit = false;
       //   cache_opts.high_pri_pool_ratio = 0.5;
       //   cache_opts.rm_ratio = rm_ratio;
-      //   if (rm_ratio > 0) {
-      //     cache_opts.data_block_memory_allocator =
-      //         std::make_shared<rocksdb::BlockBasedMemoryAllocator>(
-      //             cache_size * (1 - rm_ratio), 4096);
-      //   }
-      //   block_cache = rocksdb::NewDDLRUCache(cache_opts);
+      //   block_cache = rocksdb::NewDLRUCache(cache_opts);
       // }
+      {
+        rocksdb::DDLRUCacheOptions cache_opts;
+        cache_opts.capacity = cache_size;
+        cache_opts.num_shard_bits = table_cache_numshardbits;
+        cache_opts.strict_capacity_limit = false;
+        cache_opts.high_pri_pool_ratio = 0.5;
+        cache_opts.rm_ratio = rm_ratio;
+        if (rm_ratio > 0) {
+          cache_opts.data_block_memory_allocator =
+              std::make_shared<rocksdb::BlockBasedMemoryAllocator>(
+                  cache_size * (1 - rm_ratio), 4096);
+        }
+        block_cache = rocksdb::NewDDLRUCache(cache_opts);
+      }
       // {
       //   block_cache = rocksdb::NewLRUCache(cache_size, table_cache_numshardbits,
       //                                      false, 0.5);

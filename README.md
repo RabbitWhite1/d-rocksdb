@@ -43,9 +43,11 @@
 - [x] overlap rdma read/write as much as possible
   - [x] overlap read/write exchange in Lookup
 
-#### Improved Version v3.0.0 (actually worse)
+#### Improved Version v3.0.0
 
-- [x] local BlockBasedMemoryAllocator
+- [ ] local BlockBasedMemoryAllocator
+  - [x] a basic usable allocator (with custom deleter)
+  - [ ] shard the memory region to avoid lock contention
 - [x] register local BlockBasedMemoryAllocator for RDMA
 - [x] directly read/write to avoid copy
   - [x] sync version
