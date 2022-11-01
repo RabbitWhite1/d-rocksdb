@@ -1,5 +1,9 @@
 # Disaggregated RocksDB
 
+**This disaggregation in block cache of RocksDB seems actually not quite useful in the circumstance.**
+
+**But you may find the RDMA-related codes useful if you are a beginner in RDMA.**
+
 ## TODO
 
 ### D-RocksDB
