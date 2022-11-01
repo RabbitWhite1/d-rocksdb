@@ -1,6 +1,6 @@
 # Disaggregated RocksDB
 
-**This disaggregation in block cache of RocksDB seems actually not quite useful in the circumstance.**
+**This disaggregation in block cache of RocksDB seems actually not quite useful given the fast SSD.**
 
 **But you may find the RDMA-related codes useful if you are a beginner in RDMA.**
 
